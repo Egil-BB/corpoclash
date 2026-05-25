@@ -1,0 +1,2019 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corpo Clash: Production Engine</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/cv.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/aruco.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+
+    <style>
+        body { background-color: #0f172a; color: #f3f4f6; } 
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 3px; }
+        #canvas-container { position: relative; width: 100%; max-width: 450px; margin: 0 auto; aspect-ratio: 1 / 1; background: #000; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); border: 1px solid #1e293b; }
+        .camera-paused #canvas-output { opacity: 0.3; }
+        #video-input { display: none; } 
+        #canvas-output { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+        .pie-chart { border-radius: 50%; }
+    </style>
+</head>
+<body class="font-sans min-h-screen flex flex-col antialiased">
+
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 shadow-xl flex justify-between items-center z-10">
+        <div class="flex items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-black tracking-tight text-white">CORPO CLASH</h1>
+                <p id="header-desc" class="text-xs text-slate-400">Multi-Device Business & Production Engine</p>
+            </div>
+            <button onclick="location.reload()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-1 px-3 rounded border border-slate-700 transition">⌂ Meny</button>
+        </div>
+        <div id="status-indicator" class="text-sm font-bold text-amber-500 flex items-center gap-2">
+            <span id="status-ping" class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+            </span>
+            <span id="status-text">Laddar systemet...</span>
+        </div>
+    </header>
+
+    <main id="lobby-menu" class="flex-1 max-w-md w-full mx-auto p-6 flex flex-col justify-center gap-6">
+        <div class="text-center space-y-2 mb-4">
+            <h2 class="text-3xl font-black text-white">VÄLJ SPELLÄGE</h2>
+            <p class="text-sm text-slate-400">Konfigurera din spelmiljö vid bordet</p>
+        </div>
+
+        <button id="btn-select-local" class="bg-slate-900 border border-slate-800 hover:border-blue-500 p-5 rounded-xl text-left transition shadow-lg group">
+            <div class="text-blue-400 font-bold text-lg mb-1 flex items-center gap-2">
+                <span>📱</span> Lokalt spel (Single Device)
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Spela på en gemensam mobil. Ni skannar era avdelningar i turordning efter draften och skickar runt enheten.</p>
+        </button>
+
+        <button id="btn-select-online" class="bg-slate-900 border border-slate-800 hover:border-indigo-500 p-5 rounded-xl text-left transition shadow-lg group relative overflow-hidden">
+            <div id="online-lock-indicator" class="absolute top-2 right-2 bg-red-950 text-red-300 text-[9px] font-bold px-2 py-0.5 rounded border border-red-800 hidden">INGEN ANSLUTNING</div>
+            <div class="text-indigo-400 font-bold text-lg mb-1 flex items-center gap-2">
+                <span>🌐</span> Online-nätverk (Multi-Device)
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Alla spelare skannar samtidigt på sina egna mobiler. En gemensam server synkroniserar kvartalen, B2B-handeln och marknaden live.</p>
+        </button>
+
+        <button id="btn-test-game" class="bg-amber-900 border border-amber-800 hover:border-amber-500 p-5 rounded-xl text-left transition shadow-lg group relative overflow-hidden mt-2">
+            <div class="text-amber-400 font-bold text-lg mb-1 flex items-center gap-2">
+                <span>🤖</span> Testa Marknad (Slumpa Bolag)
+            </div>
+            <p class="text-xs text-amber-200/70 leading-relaxed">Generera 4 slumpmässiga bolag (8 anställda var) för att snabbt testa och analysera marknadsfasen utan att behöva skanna.</p>
+        </button>
+
+        <button id="btn-price-info" class="fixed bottom-4 right-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 flex items-center justify-center text-2xl shadow-xl border border-blue-400 hover:scale-110 transition z-50">ℹ️</button>
+
+        <div id="online-setup-panel" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div class="border-b border-slate-800 pb-2">
+                <h3 class="font-bold text-white text-sm uppercase">Nätverksanslutning</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">Ditt Företagsnamn / Alias</label>
+                    <input id="online-player-name" type="text" placeholder="T.ex. Bolag A" class="w-full bg-slate-950 border border-slate-800 rounded p-2 focus:outline-none focus:border-indigo-500 font-bold text-sm text-white">
+                </div>
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button id="btn-create-session" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded text-sm transition">Skapa Nytt Spel</button>
+                    <div class="flex flex-col gap-1">
+                        <input id="online-room-code" type="text" placeholder="KOD" maxlength="4" class="w-full bg-slate-950 border border-slate-800 rounded p-2 focus:outline-none focus:border-indigo-500 font-mono font-black text-center text-sm uppercase text-white tracking-widest h-[40px]">
+                        <button id="btn-join-session" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1 rounded text-xs transition">Gå med i Spel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <main id="online-lobby" class="hidden flex-1 max-w-md w-full mx-auto p-6 flex flex-col justify-center gap-6">
+        <div class="text-center bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl space-y-4">
+            <div class="text-xs text-slate-400 font-bold uppercase tracking-widest">RUMSKOD</div>
+            <div id="display-room-code" class="text-5xl font-black text-indigo-400 tracking-widest font-mono">----</div>
+            <p class="text-xs text-slate-500">Låt dina motspelare skriva in denna kod för att ansluta till nätverket.</p>
+            <div id="qrcode-container" class="flex justify-center mt-4 p-2 bg-white rounded hidden w-fit mx-auto"></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 flex-1 flex flex-col">
+            <h3 class="font-bold text-white text-sm uppercase border-b border-slate-800 pb-2">Anslutna bolag</h3>
+            <div id="lobby-players-list" class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scroll text-sm"></div>
+            
+            <div class="pt-4 border-t border-slate-800">
+                <button id="btn-host-start" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg transition hidden">Starta Kvartal 1 →</button>
+                <div id="client-wait-message" class="text-center text-xs text-slate-500 italic py-2">Väntar på att värden ska starta kvartalet...</div>
+            </div>
+        </div>
+    </main>
+
+    <main id="setup-phase" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-2 space-y-6 flex flex-col">
+            <div id="canvas-container">
+                <video id="video-input" autoplay playsinline></video>
+                <canvas id="canvas-output"></canvas>
+            </div>
+
+            <!-- Action buttons RIGHT BELOW camera -->
+            <div class="flex gap-3">
+                <button id="btn-take-photo" class="flex-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg text-sm flex items-center justify-center gap-2">
+                    📸 Ta Foto & Skanna
+                </button>
+                <button id="btn-resume-camera" class="hidden flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg text-sm flex items-center justify-center gap-2">
+                    ↻ Ny Bild
+                </button>
+                <button id="btn-clear-camera" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg text-sm">
+                    Rensa
+                </button>
+            </div>
+
+            <!-- Scan summary BELOW the buttons -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
+                <div class="flex justify-between items-end mb-4 border-b border-slate-800 pb-2">
+                    <h3 class="font-bold text-blue-400 text-lg">Live Skanning <span class="text-xs font-normal text-slate-400">(Ny Avdelning)</span></h3>
+                    <span id="scan-count" class="text-xs text-slate-400 font-bold bg-slate-800 px-2 py-1 rounded">0 kort skannade</span>
+                </div>
+
+                <div class="text-slate-400 text-[10px] uppercase font-bold mb-2">Registrerade kort</div>
+                <div id="live-cards-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
+
+                <div class="grid grid-cols-4 gap-4 text-sm">
+                    <div><div class="text-slate-400 text-[10px] uppercase">Lönekostnad</div><div id="net-salary" class="font-mono text-lg font-bold text-red-400">$0</div></div>
+                    <div><div class="text-slate-400 text-[10px] uppercase">Kräver (Input)</div><div id="net-inputs" class="flex flex-wrap mt-1"></div></div>
+                    <div><div class="text-slate-400 text-[10px] uppercase">Producerar (Output)</div><div id="net-outputs" class="flex flex-wrap mt-1"></div></div>
+                    <div><div class="text-slate-400 text-[10px] uppercase">Aktiva Regler</div><ul id="net-modifiers" class="font-mono text-indigo-400 text-[10px] mt-1 space-y-1 leading-tight"></ul></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-xl">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
+                    <h3 class="font-bold text-white text-xl">Pågående Bygge: <span id="current-company-label">Bolag 1</span></h3>
+                    <button id="btn-scan-npc" class="text-xs bg-slate-900 hover:bg-slate-700 border border-slate-600 px-3 py-1 rounded text-slate-400">Växla till NPC-Skanning</button>
+                </div>
+
+                <div class="bg-slate-900 p-4 rounded-lg mb-5 border border-slate-700/50">
+                    <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-3 border-b border-slate-800 pb-1">Totalnetto (Inkl. Live-vy)</h4>
+                    <div class="grid grid-cols-3 gap-4 text-sm">
+                        <div><div class="text-slate-500 text-[10px] uppercase">Total Lön</div><div id="comp-salary" class="font-mono text-xl font-bold text-red-400">$0</div></div>
+                        <div><div class="text-slate-500 text-[10px] uppercase">Totalt Krävs</div><div id="comp-inputs" class="flex flex-wrap mt-1"></div></div>
+                        <div><div class="text-slate-500 text-[10px] uppercase">Totalt Produceras</div><div id="comp-outputs" class="flex flex-wrap mt-1"></div></div>
+                    </div>
+                </div>
+
+                <div class="text-slate-400 text-[10px] uppercase font-bold mb-2">Registrerade Avdelningar</div>
+                <div id="current-depts-list" class="space-y-2 mb-5">
+                    <div class="text-xs text-slate-500 italic">Inga avdelningar sparade ännu.</div>
+                </div>
+
+                <button id="btn-save-player" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed text-lg uppercase tracking-wide" disabled>
+                    Klar med Bolag 1 →
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col h-full shadow-2xl">
+            <h2 class="text-xl font-bold text-white mb-4 border-b border-slate-800 pb-2" id="ready-board-title">Klara Bolag</h2>
+            <div id="players-list" class="flex-1 overflow-y-auto custom-scroll space-y-4 pr-2">
+                <div class="text-slate-500 italic text-sm">Inga bolag sparade ännu.</div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-slate-800 space-y-3">
+                <button id="btn-simulate" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-4 rounded-xl transition-colors shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed text-lg uppercase" disabled>
+                    Stäng Böckerna (Kör Kvartal)
+                </button>
+                <div id="online-wait-msg" class="text-center text-xs text-slate-500 italic hidden">Väntar på att alla spelare ska bli klara...</div>
+            </div>
+        </div>
+    </main>
+
+    <main id="sim-phase" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-2xl">
+            <h2 class="text-xl font-bold text-white mb-4 border-b border-slate-800 pb-2 flex justify-between">
+                <span>Global Marknadsöversikt (Kvartal <span id="display-round-num">1</span> av 3)</span>
+                <span class="text-sm font-normal text-blue-400" id="market-demand-added">...</span>
+            </h2>
+            <div id="market-buckets" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </section>
+
+        <section>
+            <h2 class="text-xl font-bold text-white mb-4 px-2">Kvartalsrapport (P&L)</h2>
+            <div id="player-results-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+        </section>
+
+        <section class="mt-2 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-2xl">
+            <h2 class="text-xl font-bold text-white mb-4 border-b border-slate-800 pb-2">Marknadsandelar & Ranking</h2>
+            <div id="sim-leaderboard" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
+            <div id="sim-pie-charts" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        </section>
+
+        <div class="flex justify-center gap-4 mt-4 pb-12">
+            <button id="btn-next-round" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-lg transition shadow-lg hidden">Återgå till Skanner (Ny Runda)</button>
+            <button id="btn-simulate-again" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-lg transition shadow-lg hidden">Simulera Nästa Kvartal (Samma Kort)</button>
+            <button onclick="location.reload()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 py-3 px-6 rounded-lg transition shadow">Nollställ Applikationen</button>
+        </div>
+    </main>
+
+    <main id="end-phase" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col items-center justify-center gap-8">
+        <div class="text-center">
+            <h1 class="text-5xl font-black text-blue-400 mb-2">Bokslutet är klart!</h1>
+            <p class="text-slate-400 text-lg">3 kvartal genomförda. Här är det slutgiltiga resultatet.</p>
+        </div>
+
+        <div class="w-full max-w-6xl space-y-8">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-6 border-b border-slate-800 pb-2 text-center">Slutgiltig Likviditet (Vinnare)</h2>
+                <div id="end-leaderboard" class="flex flex-wrap justify-center gap-6"></div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-2 border-b border-slate-800 pb-2 w-full text-left">Slutgiltiga Marknadsandelar</h2>
+                <p class="text-xs text-slate-400 mb-6 w-full text-left">Baserat på total genererad intäkt över hela verksamhetsåret.</p>
+                <div id="end-pie-charts" class="grid grid-cols-2 lg:grid-cols-4 gap-6"></div>
+            </div>
+        </div>
+        <button onclick="location.reload()" class="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-12 rounded-xl transition shadow-lg text-lg">Nytt Verksamhetsår</button>
+    </main>
+
+    <div id="custom-dialog" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <h3 id="dialog-title" class="text-xl font-bold text-white">Meddelande</h3>
+            <div id="dialog-body" class="text-sm text-slate-300">Innehåll...</div>
+            <button id="btn-dialog-close" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded transition">OK</button>
+        </div>
+    </div>
+
+    <script type="module">
+        try {
+            const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+            const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+            const { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+            let db, auth;
+            let activeAppId = 'corpo-clash-prod';
+
+            window.CorpoFirebase = {
+                db, auth, isOnlineSupported: true, appId: activeAppId,
+                setDoc, getDoc, doc, collection, onSnapshot, updateDoc, deleteDoc
+            };
+
+            const myFirebaseConfig = {
+                    apiKey: "AIzaSyC3-YWVFsBT9izsj-OsRuQyUploaHpixds",
+                    authDomain: "corpo-clash.firebaseapp.com",
+                    projectId: "corpo-clash",
+                    storageBucket: "corpo-clash.firebasestorage.app",
+                    messagingSenderId: "11531389619",
+                    appId: "1:11531389619:web:3d5f687f22ed7243b43ec6",
+                    measurementId: "G-H3ERKV8MDR"
+                };
+                const app = initializeApp(myFirebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                window.CorpoFirebase.db = db;
+                window.CorpoFirebase.auth = auth;
+
+            try {
+                await signInAnonymously(auth);
+            } catch (e) {
+                console.error("Firebase auth error:", e);
+            }
+
+            document.getElementById('online-lock-indicator').classList.add('hidden');
+        } catch (e) {
+            window.CorpoFirebase = { isOnlineSupported: false };
+            let lock = document.getElementById('online-lock-indicator');
+            if (lock) lock.classList.remove('hidden');
+        }
+    </script>
+
+    <script>
+        (function() {
+            window.onerror = function(msg, url, lineNo, columnNo, error) {
+                alert('JS Error: ' + msg + ' at ' + lineNo + ':' + columnNo);
+                return false;
+            };
+            let isOnlineMode = false, isHost = false, currentSessionId = null, currentOnlinePlayerId = null;
+            let cardDatabase = {}; 
+            let gameState = { players: [] };
+            let liveDepartments = []; 
+            let currentScannedCards = new Map();
+            let currentCompanyDepartments = []; 
+            let currentPlayerIndex = 1;
+            let localNPCs = [];
+            window.globalScannedIds = new Set(); 
+            window.globalInventories = {};
+
+            function showPopup(title, body) {
+                document.getElementById('dialog-title').innerText = title;
+                if (typeof body === 'string') document.getElementById('dialog-body').innerText = body;
+                else { document.getElementById('dialog-body').innerHTML = ''; document.getElementById('dialog-body').appendChild(body); }
+                document.getElementById('custom-dialog').classList.remove('hidden');
+                document.getElementById('custom-dialog').classList.add('flex');
+            }
+            document.getElementById('btn-dialog-close').addEventListener('click', () => {
+                document.getElementById('custom-dialog').classList.add('hidden');
+                document.getElementById('custom-dialog').classList.remove('flex');
+            });
+
+            function getBadgeHTML(itemName, count, quality = '') {
+                let cleanName = (itemName || '').trim();
+                let imgSrc = cleanName.toLowerCase() + '.png';
+                let qBadge = quality ? `<div class="absolute -bottom-1.5 -right-1.5 bg-slate-900 text-[9px] font-bold px-1 rounded-sm border border-slate-600 text-white z-20">${quality}</div>` : '';
+                let cBadge = count > 1 ? `<div class="absolute -top-1.5 -left-1.5 bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-sm z-20 shadow">${count}</div>` : (count === 1 ? `<div class="absolute -top-1.5 -left-1.5 bg-slate-600 text-white text-[9px] font-bold px-1 py-0.5 rounded-sm z-20 shadow">1</div>` : '');
+
+                return `
+                <div class="relative flex-shrink-0 w-12 h-12 bg-white rounded-md border border-slate-600 shadow-sm flex items-center justify-center group m-1.5" title="${count}x ${cleanName} ${quality}">
+                    <img src="${imgSrc}" alt="${cleanName}"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                         class="absolute inset-0 w-full h-full object-contain p-1 z-10 drop-shadow-md" />
+                    <span class="hidden absolute inset-0 items-center justify-center text-[7px] font-bold uppercase text-slate-300 z-0 text-center overflow-hidden leading-tight p-0.5 break-all drop-shadow">${cleanName}</span>
+                    ${cBadge}
+                    ${qBadge}
+                </div>
+                `;
+            }
+
+            function shuffleArray(arr) {
+                for (let i = arr.length - 1; i > 0; i--) {
+                    let j = Math.floor(Math.random() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+            }
+
+        // --- 3. DATABAS & REGLER ---
+        const rawStaffCSV = `ID,name,profession,image,salary,boss salary,effect coverage,effect,boss effect,effect image,quality,input 1 count,input 1 type,input 2 count,input 2 type,output 1 count,output 1 type, output 2 count,output 2 type
+1.png,Bulk Herder,Gatherer,herder.png,11,17,,,All Gatherers are Bulk,,Bulk,,,,,4,sheep.png,,
+2.png,Standard Herder,Gatherer,herder.png,11,17,,,All Gatherers are Herders,,Standard,,,,,3,sheep.png,,
+3.png,Premium Herder,Gatherer,herder.png,11,17,,,All Gatherers are Premium,,Premium,,,,,2,sheep.png,,
+4.png,Bulk Rancher,Gatherer,rancher.png,11,17,,,All Gatherers are Bulk,,Bulk,,,,,4,cow.png,,
+5.png,Standard Rancher,Gatherer,rancher.png,11,17,,,All Gatherers are Ranchers,,Standard,,,,,3,cow.png,,
+6.png,Premium Rancher,Gatherer,rancher.png,11,17,,,All Gatherers are Premium,,Premium,,,,,2,cow.png,,
+7.png,Bulk Farmer,Gatherer,farmer.png,11,17,,,All Gatherers are Bulk,,Bulk,,,,,4,plants.png,,
+8.png,Standard Farmer,Gatherer,farmer.png,11,17,,,All Gatherers are Farmers,,Standard,,,,,3,plants.png,,
+9.png,Premium Farmer,Gatherer,farmer.png,11,17,,,All Gatherers are Premium,,Premium,,,,,2,plants.png,,
+10.png,Bulk Washer,Refiner,washer.png,22,34,,,All Refiners are Bulk,,Bulk,2,sheep.png,,,4,wool.png,4,wax.png
+11.png,Standard Washer,Refiner,washer.png,22,34,,,All Refiners are Washers,,Standard,2,sheep.png,,,3,wool.png,3,wax.png
+12.png,Premium Washer,Refiner,washer.png,22,34,,,All Refiners are Premium,,Premium,2,sheep.png,,,2,wool.png,2,wax.png
+13.png,Bulk Butcher,Refiner,butcher.png,22,34,,,All Refiners are Bulk,,Bulk,2,cow.png,,,4,leather.png,4,meat.png
+14.png,Standard Butcher,Refiner,butcher.png,22,34,,,All Refiners are Butchers,,Standard,2,cow.png,,,3,leather.png,3,meat.png
+15.png,Premium Butcher,Refiner,butcher.png,22,34,,,All Refiners are Premium,,Premium,2,cow.png,,,2,leather.png,2,meat.png
+16.png,Bulk Sorter,Refiner,sorter.png,22,34,,,All Refiners are Bulk,,Bulk,2,plants.png,,,4,flowers.png,4,vegetables.png
+17.png,Standard Sorter,Refiner,sorter.png,22,34,,,All Refiners are Sorters,,Standard,2,plants.png,,,3,flowers.png,3,vegetables.png
+18.png,Premium Sorter,Refiner,sorter.png,22,34,,,All Refiners are Premium,,Premium,2,plants.png,,,2,flowers.png,2,vegetables.png
+19.png,Bulk Distiller,Chemist,distiller.png,28,42,,,All Chemists are Bulk,,Bulk,2,flowers.png,,,4,scent.png,,
+20.png,Standard Distiller,Chemist,distiller.png,28,42,,,All Chemists are Distillers,,Standard,2,flowers.png,,,3,scent.png,,
+21.png,Premium Distiller,Chemist,distiller.png,28,42,,,All Chemists are Premium,,Premium,2,flowers.png,,,2,scent.png,,
+22.png,Bulk Mixer,Chemist,mixer.png,28,42,,,All Chemists are Bulk,,Bulk,2,wax.png,,,4,gel.png,,
+23.png,Standard Mixer,Chemist,mixer.png,28,42,,,All Chemists are Mixers,,Standard,2,wax.png,,,3,gel.png,,
+24.png,Premium Mixer,Chemist,mixer.png,28,42,,,All Chemists are Premium,,Premium,2,wax.png,,,2,gel.png,,
+25.png,Bulk Formulator,Chemist,formulator.png,34,50,,,All Chemists are Bulk,,Bulk,1,gel.png,1,scent.png,4,salve.png,,
+26.png,Standard Formulator,Chemist,formulator.png,34,50,,,All chemists are Formulators,,Standard,1,gel.png,1,scent.png,3,salve.png,,
+27.png,Premium Formulator,Chemist,formulator.png,34,50,,,All Chemists are Premium,,Premium,1,gel.png,1,scent.png,2,salve.png,,
+28.png,Bulk Cook,Culinarian,cook.png,22,34,,,All Culinarians are Bulk,,Bulk,2,meat.png,,,4,burger.png,,
+29.png,Standard Cook,Culinarian,cook.png,22,34,,,All Culinarians are cooks,,Standard,2,meat.png,,,3,burger.png,,
+30.png,Premium Cook,Culinarian,cook.png,22,34,,,All Culinarians are Premium,,Premium,2,meat.png,,,2,burger.png,,
+31.png,Bulk Chopper,Culinarian,chopper.png,22,34,,,All Culinarians are Bulk,,Bulk,2,vegetables.png,,,4,salad.png,,
+32.png,Standard Chopper,Culinarian,chopper.png,22,34,,,All Culinarians are choppers,,Standard,2,vegetables.png,,,3,salad.png,,
+33.png,Premium Chopper,Culinarian,chopper.png,22,34,,,All Culinarians are Premium,,Premium,2,vegetables.png,,,2,salad.png,,
+34.png,Bulk Chef,Culinarian,chef.png,27,40,,,All Culinarians are Bulk,,Bulk,1,burger.png,1,salad.png,4,dinner.png,,
+35.png,Standard Chef,Culinarian,chef.png,27,40,,,All Culinarians are chefs,,Standard,1,burger.png,1,salad.png,3,dinner.png,,
+36.png,Premium Chef,Culinarian,chef.png,27,40,,,All Culinarians are Premium,,Premium,1,burger.png,1,salad.png,2,dinner.png,,
+37.png,Bulk Tailor,Clothier,tailor.png,25,38,,,All Clothiers are Bulk,,Bulk,2,leather.png,,,4,jacket.png,,
+38.png,Standard Tailor,Clothier,tailor.png,25,38,,,All clothier are Tailors,,Standard,2,leather.png,,,3,jacket.png,,
+39.png,Premium Tailor,Clothier,tailor.png,25,38,,,All Clothiers are Premium,,Premium,2,leather.png,,,2,jacket.png,,
+40.png,Bulk Sewer,Clothier,sewer.png,25,38,,,All Clothiers are Bulk,,Bulk,2,wool.png,,,4,pants.png,,
+41.png,Standard Sewer,Clothier,sewer.png,25,38,,,All Clothiers are Sewers,,Standard,2,wool.png,,,3,pants.png,,
+42.png,Premium Sewer,Clothier,sewer.png,25,38,,,All Clothiers are Premium,,Premium,2,wool.png,,,2,pants.png,,
+43.png,Bulk Designer,Clothier,designer.png,31,46,,,All Clothiers are Bulk,,Bulk,1,jacket.png,1,pants.png,4,outfit.png,,
+44.png,Standard Designer,Clothier,designer.png,31,46,,,All Clothiers are Designers,,Standard,1,jacket.png,1,pants.png,3,outfit.png,,
+45.png,Premium Designer,Clothier,designer.png,31,46,,,All Clothiers are Premium,,Premium,1,jacket.png,1,pants.png,2,outfit.png,,
+46.png,Cosmetics Campaigner,Cosmetics marketing,marketer.png,21,32,department,"4E, 3D demand",All marketers are cosmetic campaigners,demand.png,,,,,,,,,
+47.png,Cosmetics Influencer,Cosmetics marketing,marketer.png,21,32,department,"2C, 2B demand",All marketers are cosmetic influencers,demand.png,,,,,,,,,
+48.png,Cosmetics Tastemaker ,Cosmetics marketing,marketer.png,21,32,department,2 A demand,All marketers are cosmetic ambassadors,demand.png,,,,,,,,,
+49.png,Fashion Tastemaker,Fashion marketing,marketer.png,21,32,department,2 A demand,All marketers are fashion ambassors,demand.png,,,,,,,,,
+50.png,Fashion Campaigner ,Fashion marketing,marketer.png,21,32,department,"4E, 3D demand",All marketers are fashion campaginers,demand.png,,,,,,,,,
+51.png,Fashion Influencer ,Fashion marketing,marketer.png,21,32,department,"2C, 2B demand",All marketers are fashion influencers,demand.png,,,,,,,,,
+52.png,Food Influencer,Food marketing,marketer.png,21,32,department,"2C, 2B demand",All marketers are food influencers,demand.png,,,,,,,,,
+53.png,Food Ambassador,Food marketing,marketer.png,21,32,department,2 A demand,All marketers are food ambassadors ,demand.png,,,,,,,,,
+54.png,Food Campaigner,Food marketing,marketer.png,21,32,department,"4E, 3D demand",All marketers are food campaigners,demand.png,,,,,,,,,
+55.png,Sheep Trader,Trading,trader.png,21,32,department,50% Price bonus Sheep,All Traders are Sheep Traders,pricebonus.png,,,,,,,,,
+56.png,Cow Trader,Trading,trader.png,21,32,department,50% Price bonus Cows,All Traders are Cow Traders,pricebonus.png,,,,,,,,,
+57.png,Plants Trader,Trading,trader.png,21,32,department,50% Price bonus Plants,All Traders are Plants Traders,pricebonus.png,,,,,,,,,
+58.png,Sheep Goods Trader,Trading,trader.png,28,42,department,30% Price bonus Sheep goods,All Traders are Sheep goods Traders,pricebonus.png,,,,,,,,,
+59.png,Cow Goods Trader,Trading,trader.png,28,42,department,30% Price bonus Cow goods,All Traders are Cow goods Traders,pricebonus.png,,,,,,,,,
+60.png,Plant Goods Trader,Trading,trader.png,28,42,department,30% Price bonus Plant goods,All Traders are Plant goods Traders,pricebonus.png,,,,,,,,,
+61.png,Food Pricer,Trading,trader.png,42,63,department,20% Food sales markup,All Traders are Food Pricers,pricebonus.png,,,,,,,,,
+62.png,Fashion Pricer,Trading,trader.png,42,63,department,20% Fashion sales markup,All Traders are Fashion Pricers,pricebonus.png,,,,,,,,,
+63.png,Cosmetics Pricer,Trading,trader.png,42,63,department,20% Cosmetics sales markup,All Traders are Cosmetics Pricers,pricebonus.png,,,,,,,,,
+64.png,Gathering Manager,Management,manager.png,11,17,department,50% Gatherer salary discount,100% Gatherer salary discount,salarydiscount.png,,,,,,,,,
+65.png,Marketer Manager,Management,manager.png,21,32,department,50% Marketer salary discount,100% Marketer salary discount,salarydiscount.png,,,,,,,,,
+66.png,Trader Manager,Management,manager.png,28,42,department,50% Trader salary discount,100% Trader salary discount,salarydiscount.png,,,,,,,,,
+67.png,Manager Manager,Management,manager.png,21,32,department,50% Manager salary discount,100% Manager salary discount,salarydiscount.png,,,,,,,,,
+68.png,Refining Manager,Management,manager.png,14,21,department,50% Refiner salary discount,100% Refiner salary discount,salarydiscount.png,,,,,,,,,
+69.png,Food Manager,Management,manager.png,22,34,department,50% Culinarian salary discount,100% Culinarian salary discount,salarydiscount.png,,,,,,,,,
+70.png,Fashion Manager,Management,manager.png,25,38,department,50% Clothier salary discount,100% Clothier salary discount,salarydiscount.png,,,,,,,,,
+71.png,Cosmetics Manager,Management,manager.png,28,42,department,50% Chemists salary discount,100% Cosmetics salary discount,salarydiscount.png,,,,,,,,,
+72.png,General Manager,Management,manager.png,56,84,department,50% general salary discount,100% general salary discount,salarydiscount.png,,,,,,,,,`;
+
+        const PRICES = {
+            1: { E: 6, D: 8, C: 12 },
+            2: { E: 6, D: 8, C: 12, B: 16 }, 
+            3: { E: 15, D: 20, C: 25, B: 35, A: 50 },
+            4: { E: 25, D: 30, C: 40, B: 55, A: 75, AAA: 150 }
+        };
+
+        const PRODUCTS = {
+            'sheep': { t: 1 }, 'cow': { t: 1 }, 'plants': { t: 1 },
+            'wool': { t: 2 }, 'wax': { t: 2 }, 'leather': { t: 2 }, 'meat': { t: 2 }, 'flowers': { t: 2 }, 'vegetables': { t: 2 },
+            'scent': { t: 3, ind: 'Cosmetics' }, 'gel': { t: 3, ind: 'Cosmetics' }, 'burger': { t: 3, ind: 'Food' }, 'salad': { t: 3, ind: 'Food' }, 'jacket': { t: 3, ind: 'Fashion' }, 'pants': { t: 3, ind: 'Fashion' },
+            'salve': { t: 4, ind: 'Cosmetics' }, 'dinner': { t: 4, ind: 'Food' }, 'outfit': { t: 4, ind: 'Fashion' }
+        };
+
+        const MAX_Q = { 1: 3, 2: 4, 3: 5, 4: 6 }; 
+        const Q_VAL = { E: 1, D: 2, C: 3, B: 4, A: 5, AAA: 6 };
+        const Q_STR = [null, 'E', 'D', 'C', 'B', 'A', 'AAA'];
+        const Q_LEVELS_NORMAL = ['A', 'B', 'C', 'D', 'E'];
+        
+        const BASE_DEMAND = {
+            'Food': { A: 0, B: 1, C: 1, D: 2, E: 2 },
+            'Fashion': { A: 1, B: 1, C: 2, D: 1, E: 1 },
+            'Cosmetics': { A: 2, B: 2, C: 1, D: 1, E: 0 }
+        };
+
+        window.isOnlineMode = false;
+        window.isHost = false;
+        window.isSimulatorMode = false;
+        window.isNpcScanning = false;
+        window.localNPCs = [];
+        window.activeMarketDemand = {}; 
+        window.globalBank = {}; 
+        window.globalRevenue = {}; 
+
+        window.currentRound = 1;
+        const PIE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
+        function parseCSVLine(text) {
+            let ret = []; let inQuote = false; let value = '';
+            for (let i = 0; i < text.length; i++) {
+                let char = text[i];
+                if (char === '"') inQuote = !inQuote;
+                else if (char === ',' && !inQuote) { ret.push(value.trim()); value = ''; } 
+                else value += char;
+            }
+            ret.push(value.trim());
+            return ret;
+        }
+
+        function initDatabase() {
+            const lines = rawStaffCSV.trim().split('\n');
+            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+            for (let i = 1; i < lines.length; i++) {
+                if(!lines[i].trim()) continue;
+                const values = parseCSVLine(lines[i]);
+                let rowObject = {};
+                headers.forEach((header, index) => { rowObject[header] = values[index] ? values[index].trim() : null; });
+                if(rowObject.id) {
+                    const arucoId = parseInt(rowObject.id.replace('.png', ''));
+                    if(!isNaN(arucoId)) cardDatabase[arucoId] = rowObject;
+                }
+            }
+            console.log('Card database loaded:', Object.keys(cardDatabase).length, 'cards. IDs:', Object.keys(cardDatabase).join(','));
+        }
+        initDatabase(); // Called immediately
+
+        function isTargetMatch(target, profession) {
+            if (!profession || !target) return false;
+            let p = profession.toLowerCase(); let t = target.toLowerCase().replace(/s$/, '');
+            if (p.includes(t)) return true;
+            if (t === 'marketer' && p.includes('marketing')) return true;
+            if (t === 'trader' && p.includes('trading')) return true;
+            if (t === 'manager' && p.includes('management')) return true;
+            if (t === 'general') return true; 
+            return false;
+        }
+
+        function parseModifiers(effectText, cardData) {
+            if (!effectText) return [];
+            let mods = []; let t = effectText.toLowerCase();
+
+            let mSal = t.match(/(\d+)%\s+(.+?)\s+salary discount/);
+            if (mSal) mods.push({ type: 'salary_discount', amount: parseInt(mSal[1])/100, target: mSal[2].trim(), desc: `${mSal[1]}% lönerabatt på ${mSal[2]}` });
+
+            let mPrice = t.match(/(\d+)%\s+price bonus\s+(.+)/);
+            if (mPrice) mods.push({ type: 'price_bonus', amount: parseInt(mPrice[1])/100, target: mPrice[2].trim(), desc: `+${mPrice[1]}% prisfördel på ${mPrice[2]}` });
+
+            let mMarkup = t.match(/(\d+)%\s+(.+?)\s+sales markup/);
+            if (mMarkup) mods.push({ type: 'sales_markup', amount: parseInt(mMarkup[1])/100, target: mMarkup[2].trim(), desc: `+${mMarkup[1]}% slutgiltig markup på ${mMarkup[2]}` });
+
+            let mOverride = t.match(/all\s+(.+?)\s+are\s+(.+)/);
+            if (mOverride) {
+                let val = mOverride[2].trim();
+                let isQuality = ['bulk', 'standard', 'premium'].includes(val.toLowerCase());
+                mods.push({ type: isQuality ? 'quality_override' : 'profession_override', target: mOverride[1].trim(), value: val, desc: `Alla ${mOverride[1]} blir ${val}` });
+            }
+
+            if (t.includes('demand') && !t.includes('all')) {
+                let demandObj = {}; let displayArr = [];
+                let industryMatch = cardData.profession ? cardData.profession.match(/(Food|Fashion|Cosmetics)/i) : null;
+                let industry = industryMatch ? industryMatch[1] : 'Allmän';
+
+                let parts = t.replace('demand', '').split(',');
+                parts.forEach(part => {
+                    let p = part.trim().match(/(\d+)\s*([a-e]|aaa)/);
+                    if (p) { demandObj[p[2].toUpperCase()] = parseInt(p[1]); displayArr.push(`+${p[1]} ${p[2].toUpperCase()}`); }
+                });
+                
+                if(Object.keys(demandObj).length > 0) mods.push({ type: 'add_demand', industry: industry, levels: demandObj, desc: `Demand (${industry}): ${displayArr.join(', ')}` });
+            }
+            return mods;
+        }
+
+
+
+// --- 4. MENY LOGIK ---
+        const lobbyMenu = document.getElementById('lobby-menu');
+        const onlineSetupPanel = document.getElementById('online-setup-panel');
+        const onlineLobby = document.getElementById('online-lobby');
+
+        document.getElementById('btn-select-local').addEventListener('click', () => {
+            isOnlineMode = false;
+            lobbyMenu.classList.add('hidden');
+            document.getElementById('setup-phase').classList.remove('hidden');
+            document.getElementById('status-text').innerText = "Lokalt läge aktivt";
+            document.getElementById('status-indicator').className = "text-sm font-bold text-blue-500 flex items-center gap-2";
+            startCamera();
+        });
+
+        document.getElementById('btn-test-game').addEventListener('click', () => {
+            isOnlineMode = false;
+            window.isSimulatorMode = true;
+            lobbyMenu.classList.add('hidden');
+            document.getElementById('sim-phase').classList.remove('hidden');
+            
+            gameState.players = [];
+            window.globalScannedIds.clear();
+
+            let allCards = Object.values(cardDatabase).filter(c => c.name);
+            
+            for(let p = 1; p <= 4; p++) {
+                let depts = [];
+                for(let d = 0; d < 2; d++) {
+                    let deptCards = [];
+                    for(let c = 0; c < 4; c++) {
+                        let randCard = allCards[Math.floor(Math.random() * allCards.length)];
+                        let mockId = Math.floor(Math.random() * 1000000);
+                        deptCards.push({ id: mockId, name: randCard.name, isBoss: c===0, data: randCard, corners: [] });
+                        window.globalScannedIds.add(mockId);
+                    }
+                    currentScannedCards.clear();
+                    deptCards.forEach(c => currentScannedCards.set(c.id, c));
+                    processLiveDepartments(deptCards);
+                    depts.push(JSON.parse(JSON.stringify(liveDepartments[0])));
+                }
+                gameState.players.push({ playerNumber: p, name: `Bolag ${p}`, departments: depts });
+            }
+            
+            currentScannedCards.clear();
+            liveDepartments = [];
+
+            const results = runLocalEconomicEngine();
+            renderSimulatorUI(results.playerLogs, results.savedCustomers, results.marketClears, results.marketMatches, results.marketerAdded, results.originalDemand);
+        });
+
+        document.getElementById('btn-select-online').addEventListener('click', () => {
+            if (!window.CorpoFirebase || !window.CorpoFirebase.isOnlineSupported) {
+                showPopup("Anslutningsfel", "Kan inte ansluta till nätverket just nu.");
+                return;
+            }
+            onlineSetupPanel.classList.toggle('hidden');
+        });
+
+        document.getElementById('btn-create-session').addEventListener('click', async () => {
+            const name = document.getElementById('online-player-name').value.trim();
+            if (!name) { showPopup("Namn saknas", "Skriv in ett bolagsnamn först."); return; }
+            
+            const { db, appId, setDoc, doc, auth } = window.CorpoFirebase;
+            if (!auth.currentUser) { showPopup("Ett ögonblick", "Ansluter..."); return; }
+
+            isOnlineMode = true; isHost = true;
+            currentOnlinePlayerId = auth.currentUser.uid;
+            
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let code = ''; for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+            currentSessionId = code;
+
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', code), { status: 'lobby', currentRound: 1, hostId: currentOnlinePlayerId, marketState: {} });
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', `${code}_${currentOnlinePlayerId}`), { sessionId: code, playerId: currentOnlinePlayerId, name: name, isHost: true, playerNumber: 1, ready: false, departments: [], bankTotal: 0, revenue: { total: 0, Food: 0, Fashion: 0, Cosmetics: 0, Raw: 0 }, transactions: [] });
+                setupOnlineLobbyListeners(code);
+            } catch (e) { showPopup("Serverfel", e.message); }
+        });
+
+        document.getElementById('btn-join-session').addEventListener('click', async () => {
+            const name = document.getElementById('online-player-name').value.trim();
+            const code = document.getElementById('online-room-code').value.trim().toUpperCase();
+            
+            if (!name) { showPopup("Namn saknas", "Skriv in ditt bolagsnamn."); return; }
+            if (code.length !== 4) { showPopup("Felaktig kod", "Koden måste vara 4 bokstäver."); return; }
+            
+            const { db, appId, setDoc, getDoc, doc, auth } = window.CorpoFirebase;
+            if (!auth.currentUser) return;
+
+            isOnlineMode = true; isHost = false;
+            currentOnlinePlayerId = auth.currentUser.uid;
+            currentSessionId = code;
+
+            try {
+                const sessionSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', code));
+                if (!sessionSnap.exists()) { showPopup("Felaktig kod", "Hittade ingen session."); return; }
+
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', `${code}_${currentOnlinePlayerId}`), { sessionId: code, playerId: currentOnlinePlayerId, name: name, isHost: false, playerNumber: 99, ready: false, departments: [], bankTotal: 0, revenue: { total: 0, Food: 0, Fashion: 0, Cosmetics: 0, Raw: 0 }, transactions: [] });
+                setupOnlineLobbyListeners(code);
+            } catch (e) { showPopup("Serverfel", e.message); }
+        });
+
+        function setupOnlineLobbyListeners(code) {
+            const { db, appId, doc, onSnapshot, collection } = window.CorpoFirebase;
+            
+            lobbyMenu.classList.add('hidden');
+            onlineLobby.classList.remove('hidden');
+            document.getElementById('display-room-code').innerText = code;
+            document.getElementById('status-text').innerText = "Lobby: " + code;
+
+            if (isHost && typeof qrcode !== 'undefined') {
+                const qrUrl = window.location.origin + window.location.pathname + '?session=' + code;
+                const qr = qrcode(0, 'L');
+                qr.addData(qrUrl);
+                qr.make();
+                const container = document.getElementById('qrcode-container');
+                container.innerHTML = qr.createImgTag(4, 0);
+                container.classList.remove('hidden');
+            }
+
+            sessionUnsubscribe = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', code), (snapshot) => {
+                const data = snapshot.data();
+                if (!data) return;
+                window.currentRound = data.currentRound;
+
+                if (data.status === 'scanning') {
+                    onlineLobby.classList.add('hidden');
+                    document.getElementById('sim-phase').classList.add('hidden');
+                    document.getElementById('setup-phase').classList.remove('hidden');
+                    document.getElementById('current-company-label').innerText = document.getElementById('online-player-name').value;
+                    document.getElementById('ready-board-title').innerText = "Spelarstatus (Online)";
+                    document.getElementById('online-wait-msg').classList.remove('hidden');
+                    startCamera();
+                } else if (data.status === 'market_phase') {
+                    document.getElementById('setup-phase').classList.add('hidden');
+                    document.getElementById('sim-phase').classList.remove('hidden');
+                    document.getElementById('display-round-num').innerText = window.currentRound;
+                    loadSpelareResultatOnline();
+                } else if (data.status === 'end_game') {
+                    renderEndGameScreen();
+                }
+            });
+
+            playersUnsubscribe = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'players'), (snapshot) => {
+                const allDocs = []; snapshot.forEach(d => allDocs.push(d.data()));
+                const activePlayers = allDocs.filter(p => p.sessionId === code).sort((a, b) => a.playerId.localeCompare(b.playerId));
+                updateOnlineLobbyUI(activePlayers);
+            });
+        }
+
+        async function loadSpelareResultatOnline() {
+            const { db, appId, doc, getDoc } = window.CorpoFirebase;
+            const sessionSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sessions', currentSessionId));
+            const sessionData = sessionSnap.data();
+            const activePlayers = window.onlinePlayersListCache || [];
+
+            const playerLogs = activePlayers.map(p => ({
+                p: p.playerNumber, name: p.name, salary: p.departments.reduce((sum, d) => sum + d.totalSalary, 0), npcCosts: p.npcCosts || 0, b2bCosts: p.b2bCosts || 0, b2bRev: p.b2bRev || 0, t1t2Rev: p.t1t2Rev || 0, t3t4Rev: p.t3t4Rev || 0, transactions: p.transactions || [], npcItems: p.npcItems || [], bankTotal: p.bankTotal, net: p.net || 0
+            }));
+
+            activePlayers.forEach(p => { window.globalBank[p.playerNumber] = p.bankTotal; window.globalRevenue[p.playerNumber] = p.revenue; });
+            renderSimulatorUI(playerLogs, sessionData.marketState || {}, sessionData.marketClears || [], sessionData.marketMatches || [], sessionData.marketerAdded || {}, sessionData.originalDemand || {});
+
+            if (isHost) {
+                document.getElementById('btn-next-round').classList.remove('hidden');
+                document.getElementById('btn-next-round').innerText = window.currentRound === 3 ? "Gå till Årsbokslut" : "Återgå till Skanner (Ny Runda)";
+            } else document.getElementById('btn-next-round').classList.add('hidden');
+        }
+
+        function updateOnlineLobbyUI(players) {
+            window.onlinePlayersListCache = players;
+            let lobbyHTML = ''; let readyBoardHTML = ''; let allReady = true;
+
+            players.forEach((p, idx) => {
+                const pNum = idx + 1;
+                if (p.playerNumber !== pNum && isHost) { window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'players', `${currentSessionId}_${p.playerId}`), { playerNumber: pNum }); }
+
+                let statusLabel = p.isHost ? '<span class="text-blue-400 font-bold">(VÄRD)</span>' : '';
+                lobbyHTML += `<div class="bg-slate-800 p-2.5 rounded border border-slate-700 flex justify-between"><span>🏢 Bolag ${pNum}: <b>${p.name}</b></span><span>${statusLabel}</span></div>`;
+
+                let readyBadge = p.ready ? '<span class="text-emerald-400 font-bold">READY</span>' : '<span class="text-slate-500 italic">Skannar...</span>';
+                if (!p.ready) allReady = false;
+                readyBoardHTML += `<div class="bg-slate-800 p-3 rounded border border-slate-700 flex justify-between text-sm"><span>🏢 ${p.name} (Bolag ${pNum})</span><span>${readyBadge}</span></div>`;
+            });
+
+            document.getElementById('lobby-players-list').innerHTML = lobbyHTML;
+            document.getElementById('players-list').innerHTML = readyBoardHTML;
+
+            if (isOnlineMode && isHost) document.getElementById('btn-simulate').disabled = !allReady;
+            if (!isOnlineMode) document.getElementById('btn-simulate').disabled = gameState.players.length === 0;
+
+            if (isHost && players.length > 0) {
+                document.getElementById('btn-host-start').classList.remove('hidden');
+                document.getElementById('client-wait-message').classList.add('hidden');
+            }
+        }
+
+        document.getElementById('btn-host-start').addEventListener('click', async () => {
+            await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'sessions', currentSessionId), { status: 'scanning' });
+        });
+
+
+        // --- 5. KAMERA & SKANNING ---
+        let persistenceBuffer = { expiry: 0 };
+        let detector;
+        let cameraRunning = false;
+        let cameraPaused = false;
+        let lastFrameTime = 0;
+        const TARGET_FPS = 10; // Max detektion-fps
+        const FRAME_INTERVAL = 1000 / TARGET_FPS;
+
+        // --- CLAHE (Contrast Limited Adaptive Histogram Equalization) ---
+        function applyCLAHE(greyData, width, height, tileGridW, tileGridH, clipLimit) {
+            let out = new Uint8Array(greyData.length);
+            let tileW = Math.ceil(width / tileGridW);
+            let tileH = Math.ceil(height / tileGridH);
+
+            // Build histogram per tile
+            let tileHists = [];
+            for (let ty = 0; ty < tileGridH; ty++) {
+                tileHists[ty] = [];
+                for (let tx = 0; tx < tileGridW; tx++) {
+                    let hist = new Int32Array(256);
+                    let count = 0;
+                    let startY = ty * tileH, endY = Math.min((ty + 1) * tileH, height);
+                    let startX = tx * tileW, endX = Math.min((tx + 1) * tileW, width);
+                    for (let y = startY; y < endY; y++) {
+                        for (let x = startX; x < endX; x++) {
+                            hist[greyData[y * width + x]]++; count++;
+                        }
+                    }
+                    // Clip histogram
+                    let limit = Math.max(1, Math.floor(clipLimit * count / 256));
+                    let excess = 0;
+                    for (let i = 0; i < 256; i++) { if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; } }
+                    let bonus = Math.floor(excess / 256);
+                    for (let i = 0; i < 256; i++) hist[i] += bonus;
+                    // Build CDF (cumulative distribution -> LUT)
+                    let cdf = new Int32Array(256); cdf[0] = hist[0];
+                    for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + hist[i];
+                    let cdfMin = cdf.find(v => v > 0) || 0;
+                    let lut = new Uint8Array(256);
+                    for (let i = 0; i < 256; i++) lut[i] = Math.round((cdf[i] - cdfMin) / Math.max(1, count - cdfMin) * 255);
+                    tileHists[ty][tx] = lut;
+                }
+            }
+
+            // Bilinear interpolation between tile LUTs
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let tfy = (y / tileH) - 0.5, tfx = (x / tileW) - 0.5;
+                    let ty1 = Math.max(0, Math.floor(tfy)), ty2 = Math.min(tileGridH - 1, ty1 + 1);
+                    let tx1 = Math.max(0, Math.floor(tfx)), tx2 = Math.min(tileGridW - 1, tx1 + 1);
+                    let fy = tfy - ty1, fx = tfx - tx1;
+                    fy = Math.max(0, Math.min(1, fy)); fx = Math.max(0, Math.min(1, fx));
+                    let val = greyData[y * width + x];
+                    let v11 = tileHists[ty1][tx1][val], v12 = tileHists[ty1][tx2][val];
+                    let v21 = tileHists[ty2][tx1][val], v22 = tileHists[ty2][tx2][val];
+                    let top = v11 * (1 - fx) + v12 * fx;
+                    let bot = v21 * (1 - fx) + v22 * fx;
+                    out[y * width + x] = Math.round(top * (1 - fy) + bot * fy);
+                }
+            }
+            return out;
+        }
+
+        // --- Multi-pass ArUco detection med CLAHE ---
+        function detectMarkersMultiPass(imageData) {
+            let width = imageData.width, height = imageData.height;
+            let allMarkers = new Map(); // id -> marker (dedup)
+
+            // Bygg gråskalebild för CLAHE
+            let greyRaw = new Uint8Array(width * height);
+            let src = imageData.data;
+            for (let i = 0, j = 0; i < src.length; i += 4, j++) {
+                greyRaw[j] = (src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114 + 0.5) & 0xff;
+            }
+
+            // Applicera CLAHE
+            let claheGrey = applyCLAHE(greyRaw, width, height, 8, 8, 2.0);
+
+            // Bygg tillbaka ImageData med CLAHE-gråskalan
+            let claheImageData = new ImageData(width, height);
+            for (let i = 0, j = 0; j < claheGrey.length; j++, i += 4) {
+                claheImageData.data[i] = claheImageData.data[i + 1] = claheImageData.data[i + 2] = claheGrey[j];
+                claheImageData.data[i + 3] = 255;
+            }
+
+            // Multi-pass med olika tröskelvärden
+            let passes = [
+                { kernelSize: 2, threshold: 7 },  // Original — bra för nära
+                { kernelSize: 4, threshold: 5 },  // Avstånd, ojämn belysning
+                { kernelSize: 1, threshold: 10 },  // Hög kontrast, mot blänk
+            ];
+
+            passes.forEach(params => {
+                try {
+                    let det = new AR.Detector();
+                    // Patch detect to use custom params
+                    let origDetect = det.detect.bind(det);
+                    det.detect = function(img) {
+                        CV.grayscale(img, det.grey);
+                        // Overwrite grey with CLAHE data
+                        for (let i = 0; i < claheGrey.length; i++) det.grey.data[i] = claheGrey[i];
+                        CV.adaptiveThreshold(det.grey, det.thres, params.kernelSize, params.threshold);
+                        det.contours = CV.findContours(det.thres, det.binary);
+                        det.candidates = det.findCandidates(det.contours, img.width * 0.10, 0.05, 10);
+                        det.candidates = det.clockwiseCorners(det.candidates);
+                        det.candidates = det.notTooNear(det.candidates, 10);
+                        return det.findMarkers(det.grey, det.candidates, 49);
+                    };
+                    let markers = det.detect(imageData);
+                    markers.forEach(m => { if (!allMarkers.has(m.id)) allMarkers.set(m.id, m); });
+                } catch(e) { /* Ignore pass failures */ }
+            });
+
+            // Fallback: också köra original-detektorn på rå bild (utan CLAHE) ifall CLAHE förvärrar
+            try {
+                let fallbackDet = new AR.Detector();
+                let fbMarkers = fallbackDet.detect(imageData);
+                fbMarkers.forEach(m => { if (!allMarkers.has(m.id)) allMarkers.set(m.id, m); });
+            } catch(e) {}
+
+            return Array.from(allMarkers.values());
+        }
+
+        // --- Spatial Clustering: Gruppera kort i kolumner (avdelningar) ---
+        function clusterCardsToDepartments(cards) {
+            if (cards.length === 0) return [];
+            if (cards.length === 1) return [{ cards: cards, cx: cards[0].cx }];
+
+            // Beräkna centrumkoordinater om de inte finns
+            cards.forEach(c => {
+                if (c.cx === undefined && c.corners) {
+                    c.cx = (c.corners[0].x + c.corners[1].x + c.corners[2].x + c.corners[3].x) / 4;
+                    c.cy = (c.corners[0].y + c.corners[1].y + c.corners[2].y + c.corners[3].y) / 4;
+                }
+            });
+
+            // Beräkna genomsnittlig markörstorlek
+            let sizes = cards.filter(c => c.corners).map(c => {
+                let dx = c.corners[1].x - c.corners[0].x;
+                let dy = c.corners[1].y - c.corners[0].y;
+                return Math.sqrt(dx * dx + dy * dy);
+            });
+            let avgSize = sizes.length > 0 ? sizes.reduce((a, b) => a + b, 0) / sizes.length : 50;
+            let clusterThreshold = avgSize * 5.0; // Mer generös tröskel (5.0) för horisontella chefer
+
+            // Sortera efter X
+            let sorted = [...cards].sort((a, b) => (a.cx || 0) - (b.cx || 0));
+
+            // 1D-klustring på X-axeln
+            let clusters = [];
+            let currentCluster = [sorted[0]];
+            for (let i = 1; i < sorted.length; i++) {
+                let gap = (sorted[i].cx || 0) - (sorted[i - 1].cx || 0);
+                if (gap > clusterThreshold) {
+                    clusters.push(currentCluster);
+                    currentCluster = [sorted[i]];
+                } else {
+                    currentCluster.push(sorted[i]);
+                }
+            }
+            clusters.push(currentCluster);
+
+            // Sortera varje kluster efter Y (uppifrån och ner)
+            return clusters.map(cl => {
+                cl.sort((a, b) => (a.cy || 0) - (b.cy || 0));
+                let meanCx = cl.reduce((s, c) => s + (c.cx || 0), 0) / cl.length;
+                return { cards: cl, cx: meanCx };
+            });
+        }
+
+        // --- Förbättrad Chef-detektion ---
+        function detectBossOrientation(corners) {
+            // Vektor från corner[0] till corner[1] (top-left till top-right i markörens lokala system)
+            let dx = corners[1].x - corners[0].x;
+            let dy = corners[1].y - corners[0].y;
+            let angle = Math.atan2(dy, dx) * (180 / Math.PI); // -180 till 180
+            // Normalisera till 0–360
+            if (angle < 0) angle += 360;
+            // Chef om kortet roterat ~90° (horisontellt kort)
+            // Tolerans: 55°–125° eller 235°–305°
+            return (angle > 55 && angle < 125) || (angle > 235 && angle < 305);
+        }
+
+        function startCamera() {
+            video = document.getElementById("video-input"); canvas = document.getElementById("canvas-output"); context = canvas.getContext("2d");
+            navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment",
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    focusMode: { ideal: 'continuous' },
+                    exposureMode: { ideal: 'continuous' }
+                }, audio: false
+            }).then(function(stream) {
+                video.srcObject = stream; video.play();
+                let track = stream.getVideoTracks()[0];
+                let settings = track.getSettings();
+                let resLabel = `${settings.width || '?'}x${settings.height || '?'}`;
+                document.getElementById('status-indicator').innerHTML = `<span class="text-blue-500">● Kamera redo (${resLabel})</span>`;
+                document.getElementById('status-indicator').className = 'text-sm font-bold flex items-center gap-2';
+                detector = new AR.Detector();
+                requestAnimationFrame(processVideo);
+            }).catch(function(err) { alert("Kunde inte starta kameran. " + err); });
+        }
+
+        function processVideo() {
+            if (cameraPaused) { requestAnimationFrame(processVideo); return; }
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                if(canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            }
+            requestAnimationFrame(processVideo);
+        }
+
+        function scanCanvas() {
+            if (!video.readyState === video.HAVE_ENOUGH_DATA) return;
+            
+            // Frys kameravyn
+            cameraPaused = true;
+            document.getElementById('btn-take-photo').classList.add('hidden');
+            document.getElementById('btn-resume-camera').classList.remove('hidden');
+            
+            // Vi använder den bild som redan är ritad på canvas
+            let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            let rawMarkers = detectMarkersMultiPass(imageData);
+            let activeMarkers = rawMarkers.filter(m => !window.globalScannedIds.has(m.id));
+
+            // Persistent cards: stay until user clears
+            activeMarkers.forEach(m => {
+                let isBoss = detectBossOrientation(m.corners);
+                currentScannedCards.set(m.id, { id: m.id, name: cardDatabase[m.id] ? cardDatabase[m.id].name : `Okänt #${m.id}`, isBoss: isBoss, data: cardDatabase[m.id], corners: m.corners });
+            });
+
+            // Klustra kort till avdelningar
+            let allCards = Array.from(currentScannedCards.values());
+            let clusters = clusterCardsToDepartments(allCards);
+
+            // Validera: max 1 chef per kluster
+            clusters.forEach(cl => {
+                let bosses = cl.cards.filter(c => c.isBoss);
+                if (bosses.length > 1) {
+                    let bestBoss = bosses.reduce((best, c) => {
+                        if (!c.corners) return best;
+                        let dx = c.corners[1].x - c.corners[0].x, dy = c.corners[1].y - c.corners[0].y;
+                        let angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
+                        let dist90 = Math.min(Math.abs(angle - 90), Math.abs(angle - 270));
+                        if (!best || dist90 < best.dist) return { card: c, dist: dist90 };
+                        return best;
+                    }, null);
+                    bosses.forEach(b => { if (b !== bestBoss?.card) b.isBoss = false; currentScannedCards.set(b.id, b); });
+                }
+            });
+
+            // Uppdatera UI
+            window._currentClusters = clusters;
+            processLiveDepartments(allCards, clusters);
+            
+            // Rita visuella markeringar på den frysta canvasen
+            let clusterColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#ec4899'];
+            clusters.forEach((cl, idx) => {
+                let color = clusterColors[idx % clusterColors.length];
+
+                cl.cards.forEach(c => {
+                    if (!c.corners) return;
+                    context.beginPath(); context.moveTo(c.corners[0].x, c.corners[0].y);
+                    for (let j = 1; j < 4; ++j) context.lineTo(c.corners[j].x, c.corners[j].y);
+                    context.closePath(); context.lineWidth = c.isBoss ? 6 : 3;
+                    context.strokeStyle = c.isBoss ? '#ef4444' : color; context.stroke();
+
+                    context.fillStyle = c.isBoss ? '#ef4444' : color;
+                    context.font = `bold ${Math.max(14, Math.round(canvas.width / 60))}px sans-serif`;
+                    context.strokeStyle = 'white'; context.lineWidth = 3;
+                    let text = c.isBoss ? 'CHEF' : `${c.name}`;
+                    context.strokeText(text, c.corners[0].x, c.corners[0].y - 8);
+                    context.fillText(text, c.corners[0].x, c.corners[0].y - 8);
+                });
+
+                // Rita avdelningslabel
+                if (clusters.length > 1) {
+                    let topCard = cl.cards[0];
+                    if (topCard && topCard.corners) {
+                        let labelX = cl.cx - 30;
+                        let labelY = Math.min(...cl.cards.filter(c => c.corners).map(c => c.corners[0].y)) - 30;
+                        context.fillStyle = color;
+                        context.font = `bold ${Math.max(16, Math.round(canvas.width / 50))}px sans-serif`;
+                        context.strokeStyle = 'rgba(0,0,0,0.7)'; context.lineWidth = 4;
+                        context.strokeText(`Avd ${idx + 1}`, labelX, labelY);
+                        context.fillText(`Avd ${idx + 1}`, labelX, labelY);
+                    }
+                }
+            });
+        }
+
+        function buildDepartment(cardsList) {
+            let dept = { cards: JSON.parse(JSON.stringify(cardsList)), modifiers: [], totalSalary: 0, managerSavings: 0, inputs: {}, outputs: {} };
+
+            // Pass 1: Samla in alla chefseffekter först (som innehåller globala overrides)
+            dept.cards.forEach(card => {
+                if(!card.data) return;
+                if (card.isBoss && card.data['boss effect']) {
+                    dept.modifiers.push(...parseModifiers(card.data['boss effect'], card.data));
+                }
+            });
+
+            // Pass 2: Applicera overrides och bygg "effectiveData" för alla kort
+            dept.cards.forEach(card => {
+                if(!card.data) return;
+                let effectiveCardData = card.data; 
+                let currentName = card.data.name; 
+                let nameChanged = false;
+
+                let profOverride = dept.modifiers.find(m => m.type === 'profession_override' && isTargetMatch(m.target, card.data.profession));
+                if (profOverride) {
+                    const profMap = {
+                        'shearers': 'Herder', 'trackers': 'Rancher', 'foragers': (card.data.profession||'').toLowerCase() === 'gatherer' ? 'Farmer' : 'Sorter',
+                        'washers': 'Washer', 'butchers': 'Butcher', 'distillers': 'Distiller', 'mixers': 'Mixer', 'formulators': 'Formulator',
+                        'cooks': 'Cook', 'choppers': 'Chopper', 'chefs': 'Chef', 'tailors': 'Tailor', 'sewers': 'Sewer', 'designers': 'Designer'
+                    };
+                    let overVal = profOverride.value.toLowerCase();
+                    let mappedNoun = profMap[overVal];
+
+                    if (mappedNoun) {
+                        let parts = currentName.split(' '); 
+                        if(parts.length >= 2) { parts[1] = mappedNoun; currentName = parts.join(' '); nameChanged = true; }
+                    } else {
+                        // Robust Fallback
+                        let searchName = overVal.endsWith('s') && !overVal.endsWith('ss') ? overVal.slice(0, -1) : overVal;
+                        let foundCard = Object.values(cardDatabase).find(c => {
+                            if (!c) return false;
+                            let cName = (c.name || '').toLowerCase().trim();
+                            if (cName === searchName || cName === overVal) return true;
+                            let bEffect = (c['boss effect'] || '').toLowerCase();
+                            if (bEffect && bEffect.includes(overVal)) return true;
+                            return false;
+                        });
+                        if (foundCard) {
+                            currentName = foundCard.name.trim();
+                            nameChanged = true;
+                        }
+                    }
+                }
+
+                let qualOverride = dept.modifiers.find(m => m.type === 'quality_override' && isTargetMatch(m.target, card.data.profession));
+                if (qualOverride) {
+                    let newQual = qualOverride.value.charAt(0).toUpperCase() + qualOverride.value.slice(1).toLowerCase();
+                    currentName = currentName.replace(/Bulk|Standard|Premium/i, newQual); nameChanged = true;
+                }
+
+                if (nameChanged) {
+                    let found = Object.values(cardDatabase).find(c => c.name.toLowerCase() === currentName.toLowerCase());
+                    if (found) effectiveCardData = found;
+                }
+                
+                // Spara det överstyrda kortet på objektet
+                card.effectiveData = effectiveCardData;
+                card.isOverridden = nameChanged;
+            });
+
+            // Pass 3: Samla in standardeffekter från de EFFEKTIVA korten
+            dept.cards.forEach(card => {
+                if(!card.effectiveData) return;
+                if (card.effectiveData['effect']) {
+                    dept.modifiers.push(...parseModifiers(card.effectiveData['effect'], card.effectiveData));
+                }
+            });
+
+            // Pass 4: Beräkna stats baserat på det nya förvandlade kortet
+            let activeSalaryDiscounts = dept.modifiers.filter(m => m.type === 'salary_discount');
+
+            dept.cards.forEach(card => {
+                let effData = card.effectiveData;
+                if(!effData) return;
+                
+                let baseSal = card.isBoss ? parseFloat(effData['boss salary']) : parseFloat(effData.salary);
+                if(isNaN(baseSal)) baseSal = 0;
+
+                let matchingDiscount = activeSalaryDiscounts.find(d => isTargetMatch(d.target, effData.profession));
+                if (!matchingDiscount) matchingDiscount = activeSalaryDiscounts.find(d => d.target === 'general');
+                if (matchingDiscount) {
+                    let discountedSal = baseSal * (1 - matchingDiscount.amount);
+                    dept.managerSavings += (baseSal - discountedSal);
+                    baseSal = discountedSal;
+                }
+                dept.totalSalary += baseSal;
+
+                for(let i = 1; i <= 3; i++) {
+                    let inCount = parseInt(effData[`input ${i} count`]); let inType = effData[`input ${i} type`];
+                    if(!isNaN(inCount) && inType) { dept.inputs[inType.replace('.png', '').toLowerCase()] = (dept.inputs[inType.replace('.png', '').toLowerCase()] || 0) + inCount; }
+                    let outCount = parseInt(effData[`output ${i} count`]); let outType = effData[`output ${i} type`];
+                    if(!isNaN(outCount) && outType) {
+                        let cleanType = outType.replace('.png', '').toLowerCase();
+                        if(!dept.outputs[cleanType]) dept.outputs[cleanType] = { count: 0 };
+                        dept.outputs[cleanType].count += outCount;
+                    }
+                }
+            });
+
+            // Validate add_demand modifiers against department outputs
+            dept.modifiers.forEach(m => {
+                if (m.type === 'add_demand') {
+                    let hasMatchingOutput = false;
+                    Object.keys(dept.outputs).forEach(outType => {
+                        let prodInfo = PRODUCTS[outType];
+                        if (prodInfo && (prodInfo.t === 3 || prodInfo.t === 4) && prodInfo.ind === m.industry) {
+                            hasMatchingOutput = true;
+                        }
+                    });
+                    if (!hasMatchingOutput) {
+                        m.noEffect = true;
+                        if (!m.desc.includes('(Ingen effekt')) {
+                            m.desc += ' <span class="text-red-400 font-bold">(Ingen effekt - saknar produkt)</span>';
+                        }
+                    }
+                }
+            });
+            return dept;
+        }
+
+        function processLiveDepartments(detectedCards, clusters) {
+            if(detectedCards.length === 0) { liveDepartments = []; updateUI(); return; }
+
+            // Bygg en avdelning per kluster
+            if (clusters && clusters.length > 1) {
+                liveDepartments = clusters.map(cl => buildDepartment(cl.cards));
+            } else {
+                liveDepartments = [buildDepartment(detectedCards)];
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            let liveSal = 0; let liveIn = {}; let liveOut = {}; let liveMods = [];
+            liveDepartments.forEach(dept => {
+                liveSal += dept.totalSalary;
+                for(let key in dept.inputs) liveIn[key] = (liveIn[key] || 0) + dept.inputs[key];
+                for(let key in dept.outputs) liveOut[key] = (liveOut[key] || 0) + dept.outputs[key].count;
+                dept.modifiers.forEach(m => { if(m.desc) liveMods.push(m.desc); });
+            });
+
+            document.getElementById('net-salary').innerText = `$${Math.round(liveSal)}`;
+            let inHtml = ''; for(let key in liveIn) inHtml += getBadgeHTML(key, liveIn[key]);
+            document.getElementById('net-inputs').innerHTML = inHtml || "<span class='text-slate-600 text-xs italic py-1'>Inga</span>";
+            let outHtml = ''; for(let key in liveOut) outHtml += getBadgeHTML(key, liveOut[key]);
+            document.getElementById('net-outputs').innerHTML = outHtml || "<span class='text-slate-600 text-xs italic py-1'>Inga</span>";
+            let modHtml = ''; [...new Set(liveMods)].forEach(desc => modHtml += `<li>• ${desc}</li>`);
+            document.getElementById('net-modifiers').innerHTML = modHtml || "<li class='text-slate-600'>Inga specialregler aktiva</li>";
+            
+            let totalCards = liveDepartments.reduce((sum, d) => sum + d.cards.length, 0);
+            
+            let clusterColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#ec4899'];
+            let cardsHtml = '';
+            if(totalCards > 0) {
+                liveDepartments.forEach((dept, dIdx) => {
+                    let color = clusterColors[dIdx % clusterColors.length];
+                    if (liveDepartments.length > 1) {
+                        cardsHtml += `<div class="col-span-full mt-2 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-700/50 pb-0.5" style="color: ${color}">Avdelning ${dIdx+1}</div>`;
+                    }
+                    dept.cards.forEach(card => {
+                        let isB = card.isBoss;
+                        let effData = card.effectiveData || card.data;
+                        
+                        let nameHtml = card.isOverridden ? `<span>${card.data.name} <br><span class="text-emerald-400">→ ${effData.name}</span></span>` : card.data.name;
+                        let bossBadge = isB ? '<span class="bg-red-900/80 text-red-200 text-[9px] px-1 rounded ml-1">CHEF</span>' : '';
+                        
+                        // Visa chefens "boss effect" om det är en chef, annars arbetarens "effect"
+                        let effectText = effData ? (isB ? effData['boss effect'] : effData['effect']) : null;
+                        let effectDisplay = effectText ? `<div class="text-[10px] text-slate-400 truncate mt-0.5">${effectText}</div>` : '';
+                        
+                        cardsHtml += `<div class="bg-slate-800 p-2 rounded border" style="border-color: ${color}"><div class="text-xs font-bold ${isB ? 'text-red-400' : 'text-slate-300'} mb-1">${nameHtml}${bossBadge}</div><div class="text-[9px] text-slate-500 uppercase font-mono">${isB ? 'Chef' : effData.profession || 'Arbetare'}</div>${effectDisplay}</div>`;
+                    });
+                    
+                    dept.modifiers.filter(m => m.type === 'add_demand' && !m.noEffect).forEach(m => {
+                        cardsHtml += `<div class="col-span-full text-[10px] text-purple-400 font-bold bg-purple-900/30 p-1.5 rounded border border-purple-500/30 mb-1">👨‍💼 Marknadsföring: ${m.desc}</div>`;
+                    });
+                });
+            } else { cardsHtml = '<div class="text-xs text-slate-500 italic col-span-full">Inga kort skannade.</div>'; }
+            document.getElementById('live-cards-list').innerHTML = cardsHtml;
+
+            let compSal = 0; let compIn = {}; let compOut = {};
+            let allDeptsForCalc = currentCompanyDepartments.concat(liveDepartments); 
+            allDeptsForCalc.forEach(dept => {
+                compSal += dept.totalSalary;
+                for(let k in dept.inputs) compIn[k] = (compIn[k] || 0) + dept.inputs[k];
+                for(let k in dept.outputs) compOut[k] = (compOut[k] || 0) + dept.outputs[k].count;
+            });
+
+            document.getElementById('comp-salary').innerText = `$${Math.round(compSal)}`;
+            let cInHtml = ''; for(let key in compIn) cInHtml += getBadgeHTML(key, compIn[key]);
+            document.getElementById('comp-inputs').innerHTML = cInHtml || "<span class='text-slate-600 text-xs italic py-1'>Inga</span>";
+            let cOutHtml = ''; for(let key in compOut) cOutHtml += getBadgeHTML(key, compOut[key]);
+            document.getElementById('comp-outputs').innerHTML = cOutHtml || "<span class='text-slate-600 text-xs italic py-1'>Inga</span>";
+
+            document.getElementById('btn-save-player').disabled = (currentCompanyDepartments.length === 0 && liveDepartments.length === 0);
+            document.getElementById('btn-save-player').innerText = `Klar med Bolag ${currentPlayerIndex} →`;
+        }
+
+        // --- KNAPPAR (Skanner UI) ---
+        let isNpcScanning = false;
+        document.getElementById('btn-scan-npc').addEventListener('click', () => {
+            isNpcScanning = !isNpcScanning;
+            if(isNpcScanning) {
+                document.getElementById('btn-scan-npc').innerText = "Avbryt NPC-Skanning";
+                document.getElementById('btn-scan-npc').className = "text-xs bg-amber-950 border border-amber-800 px-3 py-1 rounded text-amber-300 font-bold";
+                document.getElementById('current-company-label').innerText = "NPC-KOOPERATIV";
+            } else {
+                document.getElementById('btn-scan-npc').innerText = "Växla till NPC-Skanning";
+                document.getElementById('btn-scan-npc').className = "text-xs bg-slate-900 hover:bg-slate-700 border border-slate-600 px-3 py-1 rounded text-slate-400";
+                document.getElementById('current-company-label').innerText = isOnlineMode ? document.getElementById('online-player-name').value : `Bolag ${currentPlayerIndex}`;
+            }
+            currentScannedCards.clear(); processLiveDepartments([]);
+        });
+
+        document.getElementById('btn-clear-camera').addEventListener('click', () => { 
+            currentScannedCards.clear(); 
+            processLiveDepartments([]); 
+            // Återgå till live-kamera om vi var i foto-läge
+            if (cameraPaused) {
+                cameraPaused = false;
+                document.getElementById('btn-resume-camera').classList.add('hidden');
+                document.getElementById('btn-take-photo').classList.remove('hidden');
+            }
+        });
+
+        document.getElementById('btn-take-photo').addEventListener('click', scanCanvas);
+        document.getElementById('btn-resume-camera').addEventListener('click', () => {
+            cameraPaused = false;
+            document.getElementById('btn-resume-camera').classList.add('hidden');
+            document.getElementById('btn-take-photo').classList.remove('hidden');
+            // Vi rensar *inte* scanner-minnet här, så man kan bygga på om man vill,
+            // men det är oftast renast att rensa om man tar en ny bild.
+            currentScannedCards.clear(); 
+            processLiveDepartments([]); 
+        });
+
+        document.getElementById('btn-save-player').addEventListener('click', async () => {
+            if (currentCompanyDepartments.length === 0 && liveDepartments.length === 0) return;
+            if (liveDepartments.length > 0) {
+                // Spara alla kvarvarande live-avdelningar
+                liveDepartments.forEach(dept => {
+                    dept.cards.forEach(c => window.globalScannedIds.add(c.id));
+                    if (isNpcScanning) localNPCs.push(JSON.parse(JSON.stringify(dept)));
+                    else currentCompanyDepartments.push(JSON.parse(JSON.stringify(dept)));
+                });
+            }
+
+            if (isOnlineMode) {
+                try {
+                    await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'players', `${currentSessionId}_${currentOnlinePlayerId}`), {
+                        departments: currentCompanyDepartments, ready: true
+                    });
+                    document.getElementById('setup-phase').classList.add('hidden');
+                    showPopup("Kalkyl Inskickad", "Väntar på dina motspelare...");
+                } catch (e) { showPopup("Serverfel", e.message); }
+            } else {
+                gameState.players.push({ playerNumber: currentPlayerIndex, name: `Bolag ${currentPlayerIndex}`, departments: JSON.parse(JSON.stringify(currentCompanyDepartments)) });
+                currentCompanyDepartments = []; currentScannedCards.clear(); liveDepartments = []; 
+                isNpcScanning = false;
+                document.getElementById('btn-scan-npc').innerText = "Växla till NPC-Skanning";
+                document.getElementById('btn-scan-npc').className = "text-xs bg-slate-900 hover:bg-slate-700 border border-slate-600 px-3 py-1 rounded text-slate-400";
+                currentPlayerIndex++; 
+                document.getElementById('current-company-label').innerText = `Bolag ${currentPlayerIndex}`;
+                processLiveDepartments([]); renderCurrentCompanyDepts(); renderPlayersListLocal();
+                if(gameState.players.length > 0) document.getElementById('btn-simulate').disabled = false;
+            }
+        });
+
+        function renderCurrentCompanyDepts() {
+            let html = '';
+            currentCompanyDepartments.forEach((dept, i) => {
+                let cardsNamesArr = dept.cards.map(c => {
+                    let effData = c.effectiveData || c.data;
+                    let nameHtml = c.isOverridden ? `<span>${c.data.name} <span class="text-emerald-400 font-bold">→ ${effData.name}</span></span>` : c.data.name;
+                    if (c.isBoss) return `<span class="text-red-400 font-bold">${nameHtml} (C)</span>`;
+                    return nameHtml;
+                });
+                let cardsNames = cardsNamesArr.join(', ');
+                html += `<div class="bg-slate-900 p-3 rounded-lg border border-slate-700 flex justify-between items-center shadow-inner"><div class="flex-1 pr-4"><div class="text-indigo-400 font-bold text-[10px] uppercase mb-0.5">Avdelning ${i+1}</div><div class="text-slate-300 text-xs">${cardsNames}</div></div><div class="text-right"><div class="text-slate-500 text-[9px] uppercase font-bold">Lön</div><div class="font-mono text-red-400 text-sm">$${Math.round(dept.totalSalary)}</div></div></div>`;
+            });
+            document.getElementById('current-depts-list').innerHTML = currentCompanyDepartments.length === 0 ? '<div class="text-xs text-slate-500 italic">Inga avdelningar sparade ännu.</div>' : html;
+        }
+
+        function renderPlayersListLocal() {
+            const container = document.getElementById('players-list'); let html = '';
+            if (gameState.players.length === 0) { container.innerHTML = '<div class="text-slate-500 italic text-sm">Inga bolag sparade.</div>'; return; }
+            gameState.players.forEach(p => {
+                html += `<div class="bg-slate-800 p-3 rounded-lg border border-slate-700 mb-3"><div class="font-bold text-blue-400 mb-2">Bolag ${p.playerNumber} <span class="text-xs font-normal text-slate-400">(${p.departments.reduce((s, d) => s + d.cards.length, 0)} kort)</span></div><div class="space-y-2">`;
+                p.departments.forEach((dept, i) => {
+                    html += `<div class="bg-slate-900 p-2 rounded text-[10px] border border-slate-700"><div class="text-slate-400 mb-1 uppercase font-bold border-b border-slate-800 pb-0.5">Avdelning ${i+1}:</div><div class="flex flex-wrap gap-1 mt-1.5">`;
+                    dept.cards.forEach(c => { html += `<div class="px-1.5 py-0.5 border rounded ${c.isBoss ? "bg-red-900/50 border-red-700 text-red-200" : "bg-slate-800 border-slate-600 text-slate-300"}">${c.name}</div>`; });
+                    html += `</div></div>`;
+                });
+                html += `</div></div>`;
+            });
+            container.innerHTML = html; container.scrollTop = container.scrollHeight;
+        }
+
+        // Database already initialized above. Just update UI status.
+        document.getElementById('status-text').innerText = "Väntar på spelval";
+        document.getElementById('status-indicator').className = "text-sm font-bold text-emerald-500 flex items-center gap-2";
+        let ping = document.getElementById('status-ping');
+        if(ping) ping.classList.add('hidden');
+
+        // --- 6. EKONOMISK MOTOR ---
+        document.getElementById('btn-simulate').addEventListener('click', async () => {
+            if (isOnlineMode) {
+                if (!isHost) return;
+                const activePlayers = window.onlinePlayersListCache || [];
+                gameState.players = activePlayers.map(p => ({ playerNumber: p.playerNumber, playerId: p.playerId, name: p.name, departments: p.departments }));
+                if (localNPCs.length > 0) gameState.players.push({ playerNumber: 99, playerId: 'npc', name: 'NPC', departments: localNPCs });
+                
+                const results = runLocalEconomicEngine();
+                try {
+                    for (let p of activePlayers) {
+                        const pLog = results.playerLogs.find(l => l.p === p.playerNumber);
+                        if (pLog) await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'players', `${currentSessionId}_${p.playerId}`), { bankTotal: pLog.bankTotal, net: pLog.net, npcCosts: pLog.npcCosts, b2bCosts: pLog.b2bCosts, b2bRev: pLog.b2bRev, t1t2Rev: pLog.t1t2Rev, t3t4Rev: pLog.t3t4Rev, transactions: pLog.transactions, npcItems: pLog.npcItems, revenue: window.globalRevenue[p.playerNumber], managerSavings: pLog.managerSavings, b2bSavings: pLog.b2bSavings, npcSavings: pLog.npcSavings, traderEarnings: pLog.traderEarnings });
+                    }
+                    await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'sessions', currentSessionId), { status: 'market_phase', marketState: results.savedCustomers, marketClears: results.marketClears, marketMatches: results.marketMatches, marketerAdded: results.marketerAdded });
+                } catch (e) { showPopup("Kritiskt Serverfel", "Kunde inte spara bokslutet."); }
+            } else {
+                if (localNPCs.length > 0) gameState.players.push({ playerNumber: 99, name: 'NPC', departments: localNPCs });
+                document.getElementById('setup-phase').classList.add('hidden');
+                document.getElementById('sim-phase').classList.remove('hidden');
+                document.getElementById('display-round-num').innerText = window.currentRound;
+                document.getElementById('btn-next-round').classList.remove('hidden');
+                document.getElementById('btn-next-round').innerText = window.currentRound === 3 ? "Gå till Årsbokslut" : "Återgå till Skanner (Ny Runda)";
+                if (window.currentRound < 3 && window.isSimulatorMode) document.getElementById('btn-simulate-again').classList.remove('hidden');
+                if(video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+                
+                const results = runLocalEconomicEngine();
+                renderSimulatorUI(results.playerLogs, results.savedCustomers, results.marketClears, results.marketMatches, results.marketerAdded, results.originalDemand);
+            }
+        });
+
+        document.getElementById('btn-simulate-again')?.addEventListener('click', () => {
+            if (isOnlineMode) return;
+            window.currentRound++;
+            if(window.currentRound > 3) { renderEndGameScreen(); return; }
+            document.getElementById('display-round-num').innerText = window.currentRound;
+            const results = runLocalEconomicEngine();
+            renderSimulatorUI(results.playerLogs, results.savedCustomers, results.marketClears, results.marketMatches, results.marketerAdded, results.originalDemand);
+        });
+
+        document.getElementById('btn-next-round').addEventListener('click', async () => {
+            if (isOnlineMode) {
+                if (!isHost) return;
+                const nextRound = window.currentRound + 1;
+                try {
+                    for (let p of window.onlinePlayersListCache || []) {
+                        await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'players', `${currentSessionId}_${p.playerId}`), { ready: false, departments: [] });
+                    }
+                    await window.CorpoFirebase.updateDoc(window.CorpoFirebase.doc(window.CorpoFirebase.db, 'artifacts', window.CorpoFirebase.appId, 'public', 'data', 'sessions', currentSessionId), { currentRound: nextRound, status: nextRound > 3 ? 'end_game' : 'scanning' });
+                } catch (e) { showPopup("Serverfel", e.message); }
+            } else {
+                window.currentRound++;
+                if(window.currentRound > 3) { renderEndGameScreen(); return; }
+                // Keep inventories! Only reset player scanning state
+                localNPCs = []; currentPlayerIndex = 1; window.globalScannedIds.clear(); currentScannedCards.clear(); currentCompanyDepartments = [];
+                gameState.players = [];
+
+                document.getElementById('current-company-label').innerText = "Bolag 1"; document.getElementById('players-list').innerHTML = '<div class="text-slate-500 italic text-sm">Inga bolag sparade ännu.</div>';
+                document.getElementById('sim-phase').classList.add('hidden'); document.getElementById('setup-phase').classList.remove('hidden'); document.getElementById('btn-simulate').disabled = true;
+                processLiveDepartments([]); renderCurrentCompanyDepts(); startCamera();
+            }
+        });
+
+        function runLocalEconomicEngine() {
+            let playerLogs = []; let marketPool = []; let customerPool = {};
+            if (window.currentRound === 1) window.activeMarketDemand = {}; 
+
+            gameState.players.forEach(player => {
+                if (player.playerNumber !== 99) {
+                    if (window.globalBank[player.playerNumber] === undefined) window.globalBank[player.playerNumber] = 0;
+                    if (window.globalRevenue[player.playerNumber] === undefined) window.globalRevenue[player.playerNumber] = { total: 0, Food: 0, Fashion: 0, Cosmetics: 0, Raw: 0 };
+                }
+                player.processedDepts = [];
+                player.departments.forEach(dept => {
+                    let pDept = { totalSalary: dept.totalSalary, cardsList: [], modifiers: dept.modifiers };
+                    dept.cards.forEach(card => {
+                        let effData = card.effectiveData || card.data; 
+                        if(!effData) return;
+                        let currentName = effData.name;
+
+                        let explicitQual = effData.quality ? effData.quality.toLowerCase() : 'standard';
+                        let qMod = explicitQual === 'bulk' ? -1 : (explicitQual === 'premium' ? 1 : 0);
+
+                        let cOuts = {}; let outKeys = []; let bestPB = 0; let bestSM = 0;
+                        for(let i=1; i<=3; i++) { let oc = parseInt(effData[`output ${i} count`]); let ot = effData[`output ${i} type`]; if(oc && ot) { let c = ot.replace('.png','').toLowerCase(); cOuts[c] = oc; outKeys.push(c); } }
+                        outKeys.forEach(o => { dept.modifiers.filter(m => m.type === 'price_bonus').forEach(m => { if (m.target === o || m.target === `${o} goods`) bestPB = Math.max(bestPB, m.amount); }); let ind = PRODUCTS[o] ? PRODUCTS[o].ind : null; if(ind) { dept.modifiers.filter(m => m.type === 'sales_markup').forEach(m => { if (m.target.toLowerCase() === ind.toLowerCase()) bestSM = Math.max(bestSM, m.amount); }); } });
+
+                        let cIns = {}; let inDisc = 0;
+                        for(let i=1; i<=3; i++) { let ic = parseInt(effData[`input ${i} count`]); let it = effData[`input ${i} type`]; if(ic && it) cIns[it.replace('.png','').toLowerCase()] = ic; }
+                        Object.keys(cIns).forEach(i => { dept.modifiers.filter(m => m.type === 'price_bonus').forEach(m => { if(m.target === i || m.target === `${i} goods`) inDisc = Math.max(inDisc, m.amount); }); });
+
+                        pDept.cardsList.push({ name: currentName, inputs: cIns, outputs: cOuts, qMod, pBonus: bestPB, sMarkup: bestSM, inDiscount: inDisc });
+                    });
+                    player.processedDepts.push(pDept);
+                });
+            });
+
+            let newProductsThisRound = new Set();
+            gameState.players.forEach(p => {
+                p.processedDepts.forEach(d => {
+                    d.cardsList.forEach(c => { Object.keys(c.outputs).forEach(o => { if (PRODUCTS[o].t === 3 || PRODUCTS[o].t === 4) { if (!window.activeMarketDemand[o]) newProductsThisRound.add(o); } }); });
+                });
+            });
+
+            newProductsThisRound.forEach(prod => { let ind = PRODUCTS[prod].ind; window.activeMarketDemand[prod] = JSON.parse(JSON.stringify(BASE_DEMAND[ind])); });
+            if (window.currentRound > 1) { Object.keys(window.activeMarketDemand).forEach(prod => { let ind = PRODUCTS[prod].ind; for (let q in BASE_DEMAND[ind]) window.activeMarketDemand[prod][q] += BASE_DEMAND[ind][q]; }); }
+
+            let marketerAdded = {};
+
+            // Initialize player logs FIRST so marketing can push to productionNotes
+            gameState.players.forEach(p => { 
+                let deptNotes = p.departments.map(() => []);
+                playerLogs.push({ p: p.playerNumber, name: p.name, salary: p.departments.reduce((sum, d) => sum + d.totalSalary, 0), managerSavings: p.departments.reduce((sum, d) => sum + (d.managerSavings || 0), 0), b2bSavings: 0, npcSavings: 0, traderEarnings: 0, npcCosts: 0, b2bCosts: 0, b2bRev: 0, t1t2Rev: 0, t3t4Rev: 0, transactions: [], npcItems: [], productionNotes: deptNotes, revByInd: { Food: 0, Fashion: 0, Cosmetics: 0, Raw: 0 } }); 
+            });
+
+            // Add department-local marketer demands
+            gameState.players.forEach((p, pIdx) => {
+                p.processedDepts.forEach((d, dIdx) => {
+                    let deptT3T4Outputs = new Set();
+                    d.cardsList.forEach(c => { Object.keys(c.outputs).forEach(o => { if (PRODUCTS[o].t === 3 || PRODUCTS[o].t === 4) deptT3T4Outputs.add(o); }); });
+                    d.modifiers.filter(m => m.type === 'add_demand' && !m.noEffect).forEach(m => {
+                        deptT3T4Outputs.forEach(prod => {
+                            if (PRODUCTS[prod].ind === m.industry) {
+                                if (!marketerAdded[prod]) marketerAdded[prod] = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+                                for (let q in m.levels) {
+                                    let eq = q === 'AAA' ? 'A' : q;
+                                    if (window.activeMarketDemand[prod][eq] !== undefined) {
+                                        window.activeMarketDemand[prod][eq] += m.levels[q];
+                                        marketerAdded[prod][eq] += m.levels[q];
+                                        let prodName = prod.charAt(0).toUpperCase() + prod.slice(1);
+                                        playerLogs[pIdx].productionNotes[dIdx].push(`<span class="text-purple-400 font-bold">👨‍💼 Marknadsföring</span> skapade +${m.levels[q]} ${eq}-efterfrågan för <span class="text-blue-300 font-bold">${prodName}</span>.`);
+                                    }
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+            let originalDemand = {};
+            Object.keys(window.activeMarketDemand).forEach(prod => {
+                originalDemand[prod] = JSON.parse(JSON.stringify(window.activeMarketDemand[prod]));
+                customerPool[prod] = []; for (let q in window.activeMarketDemand[prod]) { for (let i = 0; i < window.activeMarketDemand[prod][q]; i++) { customerPool[prod].push({ originalQ: q, currentQ: q, drops: 0, matched: false, terminal: false }); } }
+            });
+
+            let playerInventories = gameState.players.map(p => {
+                if (!window.globalInventories[p.playerNumber]) window.globalInventories[p.playerNumber] = {};
+                return JSON.parse(JSON.stringify(window.globalInventories[p.playerNumber]));
+            });
+
+            [1, 2, 3, 4].forEach(tier => {
+                let tierIntents = [];
+                gameState.players.forEach((player, pIdx) => { player.processedDepts.forEach((dept, dIdx) => { dept.cardsList.forEach(c => { let outKeys = Object.keys(c.outputs); if (outKeys.length > 0 && PRODUCTS[outKeys[0]].t === tier) { tierIntents.push({ pIdx, dIdx, card: c }); } }); }); });
+                shuffleArray(tierIntents);
+
+                tierIntents.forEach(intent => {
+                    let { pIdx, dIdx, card } = intent; let log = playerLogs[pIdx]; let inv = playerInventories[pIdx];
+                    let totalInQ = 0; let inCount = 0;
+
+                    let usedInputs = [];
+                    Object.keys(card.inputs).forEach(inItem => {
+                        let needed = card.inputs[inItem];
+                        if (inv[inItem] && inv[inItem].length > 0) {
+                            if (card.qMod > 0) inv[inItem].sort((a, b) => b.qVal - a.qVal); else if (card.qMod < 0) inv[inItem].sort((a, b) => a.qVal - b.qVal); else shuffleArray(inv[inItem]);
+                        }
+                        for(let i=0; i<needed; i++) {
+                            if (inv[inItem] && inv[inItem].length > 0) {
+                                let used = inv[inItem].shift(); totalInQ += used.qVal; inCount++;
+                                usedInputs.push({ item: inItem, qVal: used.qVal });
+                            } else {
+                                let availableB2B = [];
+                                let otherPlayers = gameState.players.map((_, idx) => idx).filter(idx => idx !== pIdx);
+                                otherPlayers.forEach(sIdx => { if (playerInventories[sIdx][inItem]) { playerInventories[sIdx][inItem].forEach((unit, uIdx) => { availableB2B.push({ sIdx, uIdx, unit }); }); } });
+
+                                if (availableB2B.length > 0) {
+                                    if (card.qMod > 0) availableB2B.sort((a, b) => b.unit.qVal - a.unit.qVal); else if (card.qMod < 0) availableB2B.sort((a, b) => a.unit.qVal - b.unit.qVal); else shuffleArray(availableB2B);
+                                    let bought = availableB2B[0]; playerInventories[bought.sIdx][inItem].splice(bought.uIdx, 1);
+                                    let baseSellerPrice = PRICES[PRODUCTS[inItem].t][Q_STR[bought.unit.qVal]];
+                                    let beforeDiscount = baseSellerPrice * (1 + bought.unit.pBonus);
+                                    let finalPaid = beforeDiscount * (1 - card.inDiscount);
+
+                                    log.b2bSavings += (beforeDiscount - finalPaid);
+                                    log.b2bCosts += finalPaid; log.transactions.push({ item: inItem, tier: PRODUCTS[inItem].t, qStr: Q_STR[bought.unit.qVal], cust: `KÖPT (Bolag ${gameState.players[bought.sIdx].playerNumber})`, price: -finalPaid, isScrap: false, isT1T2: true });
+                                    playerLogs[bought.sIdx].b2bRev += finalPaid; let ind = PRODUCTS[inItem].ind || 'Raw'; playerLogs[bought.sIdx].revByInd[ind] += finalPaid; playerLogs[bought.sIdx].transactions.push({ item: inItem, tier: PRODUCTS[inItem].t, qStr: Q_STR[bought.unit.qVal], cust: `SÅLD B2B (Till Bolag ${gameState.players[pIdx].playerNumber})`, price: finalPaid, isScrap: false, isT1T2: true });
+                                    totalInQ += bought.unit.qVal; inCount++;
+                                    usedInputs.push({ item: inItem, qVal: bought.unit.qVal });
+                                } else {
+                                    let baseNpcPrice = PRICES[PRODUCTS[inItem].t]['D'] * 1.5;
+                                    let npcPrice = baseNpcPrice * (1 - card.inDiscount); 
+                                    log.npcSavings += (baseNpcPrice - npcPrice);
+                                    log.npcCosts += npcPrice; log.npcItems.push(inItem); totalInQ += Q_VAL['D']; inCount++;
+                                    usedInputs.push({ item: inItem, qVal: Q_VAL['D'] });
+                                }
+                            }
+                        }
+                    });
+
+                    let avgInQ = inCount > 0 ? (totalInQ / inCount) : Q_VAL['D'];
+
+                    let createdOutputs = [];
+                    Object.keys(card.outputs).forEach(outItem => {
+                        let qty = card.outputs[outItem];
+                        if (!inv[outItem]) inv[outItem] = [];
+                        for(let i=0; i<qty; i++) {
+                            let finalQVal;
+                            
+                            // EXPLICIT LOGIK FÖR GATHERERS (Cards without inputs)
+                            if (inCount === 0) {
+                                if (card.qMod < 0) finalQVal = 1; // Bulk = E
+                                else if (card.qMod > 0) finalQVal = 3; // Premium = C
+                                else finalQVal = 2; // Standard = D
+                            } else {
+                                if (card.qMod === 0) {
+                                    if (avgInQ % 1 === 0.5) finalQVal = Math.random() < 0.5 ? Math.ceil(avgInQ) : Math.floor(avgInQ);
+                                    else finalQVal = Math.round(avgInQ);
+                                } else {
+                                    let modifier = card.qMod > 0 ? 0.9 : -0.9;
+                                    finalQVal = Math.round(avgInQ + modifier);
+                                }
+                            }
+                            finalQVal = Math.max(1, Math.min(finalQVal, MAX_Q[tier]));
+                            inv[outItem].push({ qVal: finalQVal, pBonus: card.pBonus, sMarkup: card.sMarkup });
+                            createdOutputs.push({ item: outItem, qVal: finalQVal });
+                        }
+                    });
+
+                    // Skapa logg för produktionen
+                    if (createdOutputs.length > 0) {
+                        let formatGroups = (arr) => {
+                            let groups = {};
+                            arr.forEach(u => { let key = `${u.item}_${u.qVal}`; if(!groups[key]) groups[key] = {item: u.item, qVal: u.qVal, count: 0}; groups[key].count++; });
+                            return Object.values(groups).map(g => `<span class="font-bold text-white">${g.count}st</span> ${g.item.charAt(0).toUpperCase() + g.item.slice(1)} (Kval <span class="font-bold">${Q_STR[g.qVal]}</span>)`).join(', ');
+                        };
+                        let outStr = formatGroups(createdOutputs);
+                        let inStr = usedInputs.length > 0 ? ` av ${formatGroups(usedInputs)}` : '';
+                        log.productionNotes[dIdx].push(`<span class="text-blue-400 font-bold">${card.name}</span> tillverkade ${outStr}${inStr}.`);
+                    }
+                });
+            });
+
+            playerInventories.forEach((inv, pIdx) => {
+                let pNum = gameState.players[pIdx].playerNumber;
+                let keptInventory = {};
+                for (let item in inv) {
+                    inv[item].forEach(unit => {
+                        let t = PRODUCTS[item].t; let qStr = Q_STR[unit.qVal];
+                        if (t === 1 || t === 2) {
+                            if (!keptInventory[item]) keptInventory[item] = [];
+                            keptInventory[item].push(unit);
+                        } else {
+                            let startQ = qStr === 'AAA' ? 'A' : qStr;
+                            marketPool.push({ playerIdx: pIdx, playerNum: gameState.players[pIdx].playerNumber, item: item, tier: t, originalQ: qStr, currentQ: startQ, drops: 0, sold: false, terminal: false, lastFailedQ: null, pBonus: unit.pBonus, sMarkup: unit.sMarkup });
+                        }
+                    });
+                }
+                window.globalInventories[pNum] = keptInventory;
+            });
+
+            let marketClears = []; let savedCustomers = {}; let marketMatches = [];
+            Object.keys(customerPool).forEach(prod => {
+                let items = marketPool.filter(i => i.item === prod); let customers = customerPool[prod];
+                Q_LEVELS_NORMAL.forEach(L => {
+                    let itemsAtL = items.filter(i => i.currentQ === L && !i.terminal && !i.sold).sort((a,b) => a.drops - b.drops);
+                    let custsAtL = customers.filter(c => c.currentQ === L && !c.terminal && !c.matched).sort((a,b) => a.drops - b.drops);
+                    let matchCount = Math.min(itemsAtL.length, custsAtL.length);
+
+                    for(let i=0; i<matchCount; i++) {
+                        let item = itemsAtL[i]; let cust = custsAtL[i]; item.sold = true; cust.matched = true;
+                        let basePrice = (PRICES[item.tier][item.originalQ] + PRICES[item.tier][cust.originalQ]) / 2;
+                        if (item.originalQ === 'AAA' && cust.originalQ === 'A') basePrice = PRICES[item.tier]['AAA'];
+                        let finalPrice = (basePrice * (1 + item.pBonus)) * (1 + item.sMarkup);
+                        
+                        playerLogs[item.playerIdx].traderEarnings += (finalPrice - basePrice);
+
+                        playerLogs[item.playerIdx].t3t4Rev += finalPrice; let ind = PRODUCTS[prod].ind || 'Raw'; playerLogs[item.playerIdx].revByInd[ind] += finalPrice;
+                        playerLogs[item.playerIdx].transactions.push({ item: prod, tier: item.tier, qStr: item.originalQ, cust: cust.originalQ, price: finalPrice, isScrap: false, isT1T2: false });
+                        marketMatches.push({ item: prod, sellerIdx: item.playerNum, itemQ: item.originalQ, custQ: cust.originalQ, matchL: L, price: finalPrice, isTerminal: false });
+                    }
+                    itemsAtL.slice(matchCount).forEach(item => { item.drops++; item.lastFailedQ = L; let nIdx = Q_LEVELS_NORMAL.indexOf(L) + 1; if (item.drops < 3 && nIdx < Q_LEVELS_NORMAL.length) item.currentQ = Q_LEVELS_NORMAL[nIdx]; else item.terminal = true; });
+                    custsAtL.slice(matchCount).forEach(cust => { cust.drops++; let nIdx = Q_LEVELS_NORMAL.indexOf(L) + 1; if (cust.drops < 3 && nIdx < Q_LEVELS_NORMAL.length) cust.currentQ = Q_LEVELS_NORMAL[nIdx]; else cust.terminal = true; });
+                });
+
+                items.filter(i => i.terminal && !i.sold).forEach(item => {
+                    let scrapPrice = PRICES[item.tier][item.lastFailedQ] * 0.5;
+                    playerLogs[item.playerIdx].t3t4Rev += scrapPrice; let ind = PRODUCTS[prod].ind || 'Raw'; playerLogs[item.playerIdx].revByInd[ind] += scrapPrice;
+                    playerLogs[item.playerIdx].transactions.push({ item: prod, tier: item.tier, qStr: item.originalQ, cust: `Outlet(${item.lastFailedQ})`, price: scrapPrice, isScrap: true, isT1T2: false });
+                    marketClears.push({ item: prod, originalQ: item.originalQ, sellerIdx: item.playerNum, lastFailedQ: item.lastFailedQ });
+                });
+
+                savedCustomers[prod] = { A:0, B:0, C:0, D:0, E:0, AAA:0 };
+                customers.filter(c => c.terminal && !c.matched).forEach(cust => { savedCustomers[prod][cust.originalQ]++; });
+            });
+
+            // NY KUND-DESTRUKTION (OUTLET)
+            // En D-produkt letar i E, D, C. En E-produkt letar i E, D, C.
+            Object.keys(savedCustomers).forEach(prod => {
+                let scraps = marketClears.filter(c => c.item === prod);
+                scraps.forEach(scrap => {
+                    let levels = ['E', 'D', 'C', 'B', 'A', 'AAA']; 
+                    let originalIdx = levels.indexOf(scrap.originalQ);
+                    if (originalIdx === -1) originalIdx = levels.indexOf('E'); // Fallback
+                    
+                    // Börja ett steg nedåt i hierarkin, om möjligt
+                    let startIdx = originalIdx > 0 ? originalIdx - 1 : 0;
+                    
+                    // Ta den valda startnivån + 2 nivåer ovanför = 3 nivåer totalt
+                    let targetLevels = levels.slice(startIdx, startIdx + 3);
+                    
+                    let ind = PRODUCTS[prod].ind;
+                    let baseDemandProd = BASE_DEMAND[ind] || { A:0, B:0, C:0, D:0, E:0, AAA:0 };
+                    
+                    for (let i = 0; i < targetLevels.length; i++) {
+                        let l = targetLevels[i];
+                        let base = baseDemandProd[l] || 0;
+                        let currentSaved = savedCustomers[prod][l] || 0;
+                        
+                        // Förstör kund om tillgänglig (drar av 1)
+                        if ((base + currentSaved) > 0) {
+                            savedCustomers[prod][l] = currentSaved - 1;
+                            break;
+                        }
+                    }
+                });
+            });
+
+            window.activeMarketDemand = savedCustomers;
+
+            playerLogs.forEach(l => {
+                let net = (l.t1t2Rev + l.t3t4Rev + l.b2bRev) - (l.salary + l.npcCosts + l.b2bCosts);
+                window.globalBank[l.p] += net;
+                window.globalRevenue[l.p].total += (l.t1t2Rev + l.t3t4Rev + l.b2bRev);
+                window.globalRevenue[l.p].Food += l.revByInd.Food; window.globalRevenue[l.p].Fashion += l.revByInd.Fashion; window.globalRevenue[l.p].Cosmetics += l.revByInd.Cosmetics; window.globalRevenue[l.p].Raw += l.revByInd.Raw;
+                l.bankTotal = window.globalBank[l.p]; l.net = net;
+            });
+
+            return { playerLogs: playerLogs, savedCustomers, marketClears, marketMatches, marketerAdded, originalDemand };
+        }
+
+        // --- 7. RENDERING AV RESULTAT ---
+        function renderSimulatorUI(logs, savedCustomers, marketClears, marketMatches = [], marketerAdded = {}, originalDemand = {}) {
+            const marketDiv = document.getElementById('market-buckets'); let mHtml = '';
+            let destroyedCount = {}; marketClears.forEach(c => { if(!destroyedCount[c.item]) destroyedCount[c.item] = {}; destroyedCount[c.item][c.originalQ] = (destroyedCount[c.item][c.originalQ] || 0) + 1; });
+
+            let activeProds = Object.keys(savedCustomers).filter(prod => marketMatches.some(m => m.item === prod));
+            if (activeProds.length === 0) { mHtml = `<div class="text-slate-500 italic col-span-full">Inga produkter har nått kundmarknaden ännu.</div>`; } else {
+                activeProds.forEach(prod => {
+                    let ladderHtml = '';
+                    let origDemandProd = originalDemand[prod] || { A:0, B:0, C:0, D:0, E:0 };
+                    let ind = PRODUCTS[prod] ? PRODUCTS[prod].ind : null;
+                    let baseDemandProd = ind && BASE_DEMAND[ind] ? BASE_DEMAND[ind] : { A:0, B:0, C:0, D:0, E:0 };
+                    ['A', 'B', 'C', 'D', 'E'].forEach(level => {
+                        let soldProductsAtL = marketMatches.filter(m => m.item === prod && m.itemQ === level);
+                        let outletItemsAtL = marketClears.filter(c => c.item === prod && c.originalQ === level);
+                        
+                        let happyCustomersAtL = marketMatches.filter(m => m.item === prod && m.custQ === level).length;
+                        let totalCustomersAtL = origDemandProd[level] || 0;
+                        let mAdded = marketerAdded[prod] && marketerAdded[prod][level] ? marketerAdded[prod][level] : 0;
+                        
+                        let sadCount = Math.max(0, totalCustomersAtL - happyCustomersAtL);
+                        
+                        let nextBase = savedCustomers[prod][level] || 0;
+                        let baseNext = baseDemandProd[level] || 0;
+                        
+                        // Check if we need to render this row
+                        if (totalCustomersAtL > 0 || soldProductsAtL.length > 0 || outletItemsAtL.length > 0 || mAdded > 0 || Math.max(0, baseNext + nextBase) > 0 || (nextBase > 0)) {
+                            
+                            // Vänster spalt (Detta Kvartal) - emojis
+                            let currentRoundHtml = '';
+                            if (mAdded > 0) {
+                                currentRoundHtml += `<div class="text-[10px] text-emerald-400 bg-emerald-900/20 px-1 py-0.5 rounded border border-emerald-800 flex items-center gap-1">📈 +${mAdded} mkt</div>`;
+                            }
+                            if (soldProductsAtL.length > 0) {
+                                let happyHtml = soldProductsAtL.map(m => {
+                                    let color = m.sellerIdx === 99 ? '#94a3b8' : PIE_COLORS[(m.sellerIdx - 1) % PIE_COLORS.length];
+                                    let custLabel = m.custQ !== level ? `<sub class="text-[8px] font-bold">${m.custQ}</sub>` : '';
+                                    return `<span title="${m.custQ}-kund köpte ${m.itemQ}-vara av Bolag ${m.sellerIdx} för $${Math.round(m.price)}" style="border-bottom: 3px solid ${color}" class="cursor-default inline-flex items-end">😊${custLabel}</span>`;
+                                }).join('');
+                                currentRoundHtml += `<div class="flex flex-wrap gap-0.5 text-sm leading-tight">${happyHtml}</div>`;
+                            }
+                            if (sadCount > 0) {
+                                currentRoundHtml += `<div class="flex flex-wrap gap-0.5 text-sm leading-tight">${'😢'.repeat(sadCount)}</div>`;
+                            }
+                            if (outletItemsAtL.length > 0) {
+                                let outletHtml = outletItemsAtL.map(o => {
+                                    let color = o.sellerIdx === 99 ? '#94a3b8' : PIE_COLORS[(o.sellerIdx - 1) % PIE_COLORS.length];
+                                    return `<span title="Bolag ${o.sellerIdx} outlettade ${o.originalQ}-vara" style="border-bottom: 3px solid ${color}" class="cursor-default inline-flex items-end">🏷️</span>`;
+                                }).join('');
+                                currentRoundHtml += `<div class="flex flex-wrap gap-0.5 text-sm leading-tight">${outletHtml} <span class="text-[10px] text-red-400 ml-1 mt-1">outlet</span></div>`;
+                            }
+                            if (!currentRoundHtml) currentRoundHtml = `<span class="text-[10px] text-slate-500 italic">Ingen aktivitet</span>`;
+                            
+                            // Höger spalt (Inför Nästa) - neutral base + sad carry
+                            let nextRoundHtml = '';
+                            
+                            let sadCarry = nextBase > 0 ? nextBase : 0;
+                            let bNext = Math.max(0, baseNext + nextBase);
+                            let neutralCount = Math.max(0, bNext - sadCarry);
+                            
+                            if (neutralCount > 0) {
+                                nextRoundHtml += `<div class="flex flex-wrap gap-0.5 text-sm leading-tight">${'😐'.repeat(neutralCount)}</div>`;
+                            }
+                            if (sadCarry > 0) {
+                                nextRoundHtml += `<div class="flex flex-wrap gap-0.5 text-sm leading-tight">${'😢'.repeat(sadCarry)}</div>`;
+                            }
+                            if (!nextRoundHtml) nextRoundHtml = `<span class="text-[10px] text-slate-500 italic">-</span>`;
+
+                            ladderHtml += `
+                            <div class="flex items-stretch border-b border-slate-700/50 py-2">
+                                <div class="font-black text-lg w-6 text-center text-slate-400 flex items-center justify-center">${level}</div>
+                                <div class="flex-1 grid grid-cols-2 gap-4 pl-2 border-l border-slate-700/30">
+                                    <div class="flex flex-col gap-1 pr-2 border-r border-slate-700/30">
+                                        <div class="text-[8px] text-slate-500 font-bold uppercase mb-0.5">Detta Kvartal</div>
+                                        <div class="flex flex-col gap-1">${currentRoundHtml}</div>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <div class="text-[8px] text-slate-500 font-bold uppercase mb-0.5">Inför Nästa</div>
+                                        <div class="flex flex-col gap-1">${nextRoundHtml}</div>
+                                    </div>
+                                </div>
+                            </div>`;
+                        }
+                    });
+
+                    if (!ladderHtml) ladderHtml = `<div class="text-xs text-slate-500 italic p-2">Ingen aktivitet på marknaden.</div>`;
+
+                    mHtml += `<div class="bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
+                        <div class="flex items-center justify-between mb-2 pb-2 border-b border-slate-700">
+                            <h3 class="text-blue-400 font-bold uppercase tracking-wider flex items-center gap-2">${getBadgeHTML(prod, 1)} <span class="-ml-2">${prod}</span></h3>
+                        </div>
+                        <div class="space-y-0 bg-slate-900/50 rounded border border-slate-700/50 p-2">
+                            ${ladderHtml}
+                        </div>
+                    </div>`;
+                });
+            }
+            marketDiv.innerHTML = mHtml; document.getElementById('market-demand-added').innerText = marketClears.length > 0 ? `${marketClears.length} varor dumpades.` : 'Alla varor fann köpare!';
+
+            const playersDiv = document.getElementById('player-results-container'); let pHtml = '';
+            logs.forEach(l => {
+                let color = l.p === 99 ? '#94a3b8' : PIE_COLORS[(l.p - 1) % PIE_COLORS.length];
+                let tGroups = {};
+                l.transactions.forEach(t => { let key = `${t.item}_${t.qStr}_${t.cust}_${t.price > 0 ? 'rev' : 'cost'}`; if (!tGroups[key]) tGroups[key] = { ...t, qty: 0, totalRev: 0 }; tGroups[key].qty++; tGroups[key].totalRev += t.price; });
+
+                let prodHtml = ''; let salesHtml = '';
+                Object.values(tGroups).forEach(g => {
+                    let perItemPrice = Math.round(Math.abs(g.totalRev / g.qty)); let totalRevRound = Math.round(Math.abs(g.totalRev)); let isNegative = g.price < 0; let sign = isNegative ? '-' : '+';
+                    
+                    let targetText = ''; let actionText = 'sålda till';
+                    if (g.isT1T2 && g.cust.includes('SÅLD B2B')) { targetText = `<span class="text-indigo-400">${g.cust.replace('SÅLD B2B (Till ', '').replace(')', '')}</span>`; }
+                    else if (g.isT1T2 && g.cust.includes('KÖPT')) { targetText = `<span class="text-amber-400">${g.cust.replace('KÖPT (Från ', '').replace('KÖPT (', '').replace(')', '')}</span>`; actionText = 'köpta från'; }
+                    else if (g.isT1T2) { targetText = `<span class="text-slate-400">NPC (Fast Pris)</span>`; }
+                    else if (g.isScrap) { targetText = `<span class="text-red-400">${g.cust}</span>`; actionText = 'skrotade'; }
+                    else { targetText = `<span class="text-blue-400">${g.cust}-kund${g.qStr === 'AAA' && g.cust === 'A' ? ' [AAA-pris]' : ''}</span>`; }
+
+                    let rowHtml = `<div class="flex justify-between items-center py-2 border-b border-slate-700/50 text-xs"><span class="text-slate-300 flex items-center gap-1.5"><span class="font-bold text-white">${g.qty}x</span>${getBadgeHTML(g.item, 0, g.qStr)}<span>${actionText} ${targetText}</span><span class="text-slate-500 italic ml-1">á $${perItemPrice} st</span></span><span class="font-mono font-bold ${isNegative ? 'text-red-400' : 'text-emerald-400'}">${sign}$${totalRevRound}</span></div>`;
+                    if (g.isT1T2) prodHtml += rowHtml; else salesHtml += rowHtml;
+                });
+
+                let npcGroups = {}; l.npcItems.forEach(i => { let itemName = i.replace('1x ', ''); npcGroups[itemName] = (npcGroups[itemName] || 0) + 1; });
+                let npcItemsHtml = '<div class="flex flex-wrap gap-1">'; Object.keys(npcGroups).forEach(k => { npcItemsHtml += getBadgeHTML(k, npcGroups[k], 'D'); }); npcItemsHtml += '</div>';
+
+                let tabProdHtml = `
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="text-[10px] text-slate-400 font-bold uppercase mb-2">Transaktioner</h4>
+                            ${prodHtml || '<div class="text-xs text-slate-500 italic mt-2">Inga ekonomiska transaktioner i denna fas.</div>'}
+                            ${Object.keys(npcGroups).length > 0 ? `<h4 class="text-[10px] text-slate-400 font-bold uppercase mt-4 mb-1">Nödköp Råvaror (NPC)</h4>${npcItemsHtml}` : ''}
+                        </div>
+                        <div class="border-t border-slate-700/50 pt-3">
+                            <h4 class="text-[10px] text-slate-400 font-bold uppercase mb-2">Produktionslogg</h4>
+                            ${l.productionNotes.some(deptNotes => deptNotes.length > 0) ? 
+                                l.productionNotes.map((deptNotes, dIdx) => 
+                                    deptNotes.length > 0 ? `<div class="mb-2"><div class="text-[10px] text-indigo-400 font-bold mb-1">Avdelning ${dIdx + 1}</div>` + 
+                                    deptNotes.map(n => `<div class="text-xs text-slate-300 py-1 border-b border-slate-700/50 ml-2">${n}</div>`).join('') + `</div>` : ''
+                                ).join('')
+                            : '<div class="text-xs text-slate-500 italic mt-2">Ingen produktion registrerad.</div>'}
+                        </div>
+                    </div>`;
+                    
+                let tabSalesHtml = `
+                    <div class="space-y-4">
+                        <div>
+                            ${salesHtml || '<div class="text-xs text-slate-500 italic mt-2">Inga aktiviteter i denna fas.</div>'}
+                        </div>
+                    </div>`;
+
+                let mgrSav = l.managerSavings || 0;
+                let traderEarn = l.traderEarnings || 0;
+                let npcSav = l.npcSavings || 0;
+                let b2bSav = l.b2bSavings || 0;
+
+                let omsattning = l.t1t2Rev + l.t3t4Rev + l.b2bRev;
+
+                let inventoryHtml = '';
+                let inv = window.globalInventories[l.p];
+                if (inv && Object.keys(inv).length > 0) {
+                    let invItems = [];
+                    Object.keys(inv).forEach(item => {
+                        if (inv[item] && inv[item].length > 0) {
+                            let qGroups = {};
+                            inv[item].forEach(u => { let qs = u.qStr || 'D'; qGroups[qs] = (qGroups[qs] || 0) + 1; });
+                            Object.keys(qGroups).forEach(q => { invItems.push(getBadgeHTML(item, qGroups[q], q)); });
+                        }
+                    });
+                    inventoryHtml = invItems.length > 0 ? `<div class="flex flex-wrap gap-1">${invItems.join('')}</div>` : '<div class="text-xs text-slate-500 italic">Tomt lager.</div>';
+                } else {
+                    inventoryHtml = '<div class="text-xs text-slate-500 italic">Tomt lager.</div>';
+                }
+
+                let mgrNote = mgrSav > 0 ? ` <span class="text-emerald-400 text-[11px]">(Manager: -$${Math.round(mgrSav)})</span>` : '';
+                let traderRevNote = traderEarn > 0 ? ` <span class="text-emerald-400 text-[11px]">(Trader: +$${Math.round(traderEarn)})</span>` : '';
+                let traderCostNote = (npcSav + b2bSav) > 0 ? ` <span class="text-emerald-400 text-[11px]">(Trader: -$${Math.round(npcSav + b2bSav)})</span>` : '';
+
+                pHtml += `<div class="bg-slate-800 border-2 rounded-xl flex flex-col overflow-hidden shadow-lg" style="border-color: ${color}">
+                    
+                    <!-- NY KLICKBAR HEADER -->
+                    <div class="bg-slate-900/80 p-4 cursor-pointer hover:bg-slate-800 transition flex justify-between items-center" style="border-bottom: 1px solid ${color}40" onclick="this.nextElementSibling.classList.toggle('hidden'); let ind=this.querySelector('.exp-ind'); ind.style.transform = ind.style.transform === 'rotate(180deg)' ? 'rotate(0deg)' : 'rotate(180deg)';">
+                        <h3 class="font-black text-xl text-white flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background-color: ${color}"></div> Bolag ${l.p} (${l.name})</h3>
+                        <div class="text-right flex items-center gap-3">
+                            <div class="text-right">
+                                <span class="text-[10px] text-slate-400 uppercase font-bold block">Likviditet (Bank)</span>
+                                <span class="font-mono text-xl font-bold ${l.bankTotal >= 0 ? 'text-blue-400' : 'text-red-500'}">$${Math.round(l.bankTotal)}</span>
+                            </div>
+                            <div class="exp-ind text-slate-500 font-bold text-sm transition-transform duration-200" style="transform: rotate(0deg);">▼</div>
+                        </div>
+                    </div>
+                    
+                    <!-- EXPENDABLE BODY -->
+                    <div class="hidden flex-col">
+                        <div class="bg-slate-900 p-4 border-b" style="border-bottom-color: ${color}">
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-400">Omsättning (Brutto):${traderRevNote}</span><span class="font-mono text-emerald-400">+$${Math.round(omsattning)}</span></div>
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-400">Lönekostnad:${mgrNote}</span><span class="font-mono text-red-400">-$${Math.round(l.salary)}</span></div>
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-400">Externa Inköp (NPC):${traderCostNote}</span><span class="font-mono text-red-400">-$${Math.round(l.npcCosts)}</span></div>
+                            <div class="flex justify-between items-center text-sm mt-3 pt-2 font-bold" style="border-top: 1px solid ${color}40">
+                                <span class="text-slate-200">Netto (Detta kvartal):</span>
+                                <div class="text-right">
+                                    <span class="font-mono text-lg ${l.net >= 0 ? 'text-emerald-400' : 'text-red-400'}">${l.net >= 0 ? '+' : ''}$${Math.round(l.net)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-slate-800 flex-1 flex flex-col gap-4">
+                            <div class="flex border-b border-slate-700/50 mb-2">
+                                <button onclick="this.parentElement.nextElementSibling.classList.remove('hidden'); this.parentElement.nextElementSibling.nextElementSibling.classList.add('hidden'); this.classList.add('border-b-2', 'border-blue-400', 'text-blue-400'); this.classList.remove('text-slate-400'); this.nextElementSibling.classList.remove('border-b-2', 'border-blue-400', 'text-blue-400'); this.nextElementSibling.classList.add('text-slate-400');" class="flex-1 py-2 text-[10px] uppercase font-bold text-blue-400 border-b-2 border-blue-400 transition-all focus:outline-none">Produktion & B2B</button>
+                                <button onclick="this.parentElement.nextElementSibling.classList.add('hidden'); this.parentElement.nextElementSibling.nextElementSibling.classList.remove('hidden'); this.classList.add('border-b-2', 'border-blue-400', 'text-blue-400'); this.classList.remove('text-slate-400'); this.previousElementSibling.classList.remove('border-b-2', 'border-blue-400', 'text-blue-400'); this.previousElementSibling.classList.add('text-slate-400');" class="flex-1 py-2 text-[10px] uppercase font-bold text-slate-400 transition-all focus:outline-none">Försäljning & Marknad</button>
+                            </div>
+                            <div>
+                                ${tabProdHtml}
+                            </div>
+                            <div class="hidden">
+                                ${tabSalesHtml}
+                            </div>
+                            <div class="border-t border-slate-700/50 pt-3 mt-auto">
+                                <h4 class="text-[10px] text-amber-400 font-bold uppercase mb-2">📦 Nuvarande Lager (Sparade Råvaror)</h4>
+                                ${inventoryHtml}
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            playersDiv.innerHTML = pHtml;
+
+            let playersData = Object.keys(window.globalBank).map(p => { const pNum = parseInt(p); const matchingPlayer = gameState.players.find(gp => gp.playerNumber === pNum); return { p: pNum, name: matchingPlayer ? matchingPlayer.name : `Bolag ${pNum}`, bank: window.globalBank[pNum], rev: window.globalRevenue[pNum] }; });
+            let leaderHtml = ''; [...playersData].sort((a, b) => b.bank - a.bank).forEach((pd, index, arr) => { leaderHtml += `<div class="bg-slate-800 p-3 rounded-lg border border-slate-700 shadow flex flex-col items-center justify-center"><span class="text-sm mb-1">${index === 0 ? '🏆' : (index === arr.length - 1 ? '💀' : '📊')} ${pd.name}</span><span class="font-mono font-black ${pd.bank >= 0 ? 'text-blue-400' : 'text-red-500'} text-xl">$${Math.round(pd.bank)}</span></div>`; });
+            document.getElementById('sim-leaderboard').innerHTML = leaderHtml;
+
+            let piesHtml = createPieChartHTML('Total Intäkt', playersData, pd => pd.rev.total) + createPieChartHTML('Livsmedel', playersData, pd => pd.rev.Food) + createPieChartHTML('Mode', playersData, pd => pd.rev.Fashion) + createPieChartHTML('Kosmetika', playersData, pd => pd.rev.Cosmetics);
+            document.getElementById('sim-pie-charts').innerHTML = piesHtml;
+        }
+
+        function createPieChartHTML(title, playersData, valueExtractor) {
+            let total = playersData.reduce((sum, pd) => sum + valueExtractor(pd), 0);
+            if (total <= 0) return `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md flex flex-col items-center"><h3 class="text-slate-300 font-bold mb-4 uppercase tracking-wider text-[11px]">${title}</h3><div class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center mb-4"><span class="text-slate-500 text-[10px]">Ingen data</span></div></div>`;
+            let conicGradientParts = []; let legendHtml = ''; let currentDegree = 0;
+            playersData.forEach(pd => {
+                let val = valueExtractor(pd); if (val <= 0) return; 
+                let color = PIE_COLORS[(pd.p - 1) % PIE_COLORS.length]; let percentage = (val / total) * 100;
+                conicGradientParts.push(`${color} ${currentDegree}% ${currentDegree + percentage}%`); currentDegree += percentage;
+                legendHtml += `<div class="flex items-center justify-between w-full border-b border-slate-700/50 pb-1 mt-1 text-[11px]"><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background-color: ${color};"></span><span class="text-slate-300">${pd.name}</span></div><span class="text-white font-mono">${Math.round(percentage)}%</span></div>`;
+            });
+            return `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md flex flex-col items-center"><h3 class="text-slate-300 font-bold mb-4 uppercase tracking-wider text-[11px]">${title}</h3><div class="relative w-24 h-24 pie-chart mb-4" style="background: conic-gradient(${conicGradientParts.join(', ')});"><div class="absolute inset-0 m-auto w-12 h-12 bg-slate-800 rounded-full shadow-inner"></div></div><div class="w-full px-2">${legendHtml}</div></div>`;
+        }
+
+        function renderEndGameScreen() {
+            document.getElementById('sim-phase').classList.add('hidden');
+            document.getElementById('end-phase').classList.remove('hidden');
+
+            Object.keys(window.globalInventories).forEach(pStr => {
+                let pNum = parseInt(pStr);
+                let inv = window.globalInventories[pNum];
+                for (let item in inv) {
+                    inv[item].forEach(unit => {
+                        let qStr = Q_STR[unit.qVal];
+                        let t = PRODUCTS[item].t;
+                        let val = PRICES[t][qStr] * 0.5; // Halva priset
+                        window.globalBank[pNum] += val;
+                        window.globalRevenue[pNum].total += val;
+                    });
+                }
+                window.globalInventories[pNum] = {}; // Töm lagret
+            });
+
+            let playersData = Object.keys(window.globalBank).map(p => { const pNum = parseInt(p); const matchingPlayer = gameState.players.find(gp => gp.playerNumber === pNum); return { p: pNum, name: matchingPlayer ? matchingPlayer.name : `Bolag ${pNum}`, bank: window.globalBank[pNum], rev: window.globalRevenue[pNum] }; });
+            
+            let endLeaderboardHtml = '';
+            [...playersData].sort((a, b) => b.bank - a.bank).forEach((pd, index) => { 
+                endLeaderboardHtml += `
+                <div class="${index === 0 ? 'bg-gradient-to-b from-amber-500/20 to-amber-900/40 border-amber-500 scale-110 shadow-[0_0_30px_rgba(245,158,11,0.2)]' : 'bg-slate-800 border-slate-700'} p-6 rounded-2xl border-2 shadow flex flex-col items-center justify-center min-w-[200px]">
+                    <span class="text-xl mb-2 font-bold ${index === 0 ? 'text-amber-400' : 'text-slate-400'}">${index === 0 ? '🏆 VINNARE' : `#${index+1}`}</span>
+                    <span class="text-lg text-white mb-4">${pd.name}</span>
+                    <span class="text-[10px] text-slate-500 uppercase mb-1">Slutgiltig Likviditet (Inkl. lagervärde)</span>
+                    <span class="font-mono font-black ${pd.bank >= 0 ? 'text-emerald-400' : 'text-red-500'} text-4xl">$${Math.round(pd.bank)}</span>
+                </div>`; 
+            });
+            document.getElementById('end-leaderboard').innerHTML = endLeaderboardHtml;
+
+            let endPiesHtml = createPieChartHTML('Total Intäkt', playersData, pd => pd.rev.total) + createPieChartHTML('Livsmedel', playersData, pd => pd.rev.Food) + createPieChartHTML('Mode', playersData, pd => pd.rev.Fashion) + createPieChartHTML('Kosmetika', playersData, pd => pd.rev.Cosmetics);
+            document.getElementById('end-pie-charts').innerHTML = endPiesHtml;
+        }
+
+        document.getElementById('btn-price-info')?.addEventListener('click', () => {
+            let infoHtml = `<div class="text-left space-y-4">
+                <div><h4 class="font-bold text-slate-300 border-b border-slate-700 mb-2 pb-1">Tier 1 (Råvaror)</h4>
+                <div class="grid grid-cols-3 gap-2 text-xs text-center">
+                    <div class="bg-slate-800 p-1.5 rounded">E: <span class="text-white font-bold">$${PRICES[1]['E']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">D: <span class="text-white font-bold">$${PRICES[1]['D']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">C: <span class="text-white font-bold">$${PRICES[1]['C']}</span></div>
+                </div></div>
+                <div><h4 class="font-bold text-blue-400 border-b border-slate-700 mb-2 pb-1">Tier 2 (Förädlade)</h4>
+                <div class="grid grid-cols-4 gap-2 text-xs text-center">
+                    <div class="bg-slate-800 p-1.5 rounded">E: <span class="text-white font-bold">$${PRICES[2]['E']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">D: <span class="text-white font-bold">$${PRICES[2]['D']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">C: <span class="text-white font-bold">$${PRICES[2]['C']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">B: <span class="text-white font-bold">$${PRICES[2]['B']}</span></div>
+                </div></div>
+                <div><h4 class="font-bold text-amber-400 border-b border-slate-700 mb-2 pb-1">Tier 3 (Produkter)</h4>
+                <div class="grid grid-cols-5 gap-2 text-xs text-center">
+                    <div class="bg-slate-800 p-1.5 rounded">E: <span class="text-white font-bold">$${PRICES[3]['E']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">D: <span class="text-white font-bold">$${PRICES[3]['D']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">C: <span class="text-white font-bold">$${PRICES[3]['C']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">B: <span class="text-white font-bold">$${PRICES[3]['B']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">A: <span class="text-white font-bold">$${PRICES[3]['A']}</span></div>
+                </div></div>
+                <div><h4 class="font-bold text-purple-400 border-b border-slate-700 mb-2 pb-1">Tier 4 (Lyxprodukter)</h4>
+                <div class="grid grid-cols-3 gap-2 text-xs text-center">
+                    <div class="bg-slate-800 p-1.5 rounded">E: <span class="text-white font-bold">$${PRICES[4]['E']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">D: <span class="text-white font-bold">$${PRICES[4]['D']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">C: <span class="text-white font-bold">$${PRICES[4]['C']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">B: <span class="text-white font-bold">$${PRICES[4]['B']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded">A: <span class="text-white font-bold">$${PRICES[4]['A']}</span></div>
+                    <div class="bg-slate-800 p-1.5 rounded text-purple-400 font-bold">AAA: <span class="text-white">$${PRICES[4]['AAA']}</span></div>
+                </div></div>
+            </div>`;
+            showPopup("Grundpriser (Marknad)", infoHtml);
+            document.getElementById('dialog-body').innerHTML = infoHtml;
+        });
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionParam = urlParams.get('session');
+        if (sessionParam) {
+            document.getElementById('online-room-code').value = sessionParam.toUpperCase();
+            
+            let attempts = 0;
+            let checkFb = setInterval(() => {
+                attempts++;
+                if (window.CorpoFirebase !== undefined) {
+                    clearInterval(checkFb);
+                    document.getElementById('btn-select-online').click();
+                    setTimeout(() => document.getElementById('btn-join-session').click(), 500);
+                } else if (attempts > 50) {
+                    clearInterval(checkFb);
+                }
+            }, 100);
+        }
+
+        })();
+    </script>
+</body>
+</html>
