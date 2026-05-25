@@ -1,0 +1,2 @@
+# corpoclash
+game contents
